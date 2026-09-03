@@ -38,6 +38,8 @@ exness_bot/
   indicators.py        indicator + trailing-stop + session math (no MT5 import)
   data.py              live rates -> indicator DataFrame
   strategy.py          LLM decision + rule-based fallback
+  prompts.py           named LLM prompt presets (conservative, trend_follow, ...)
+  llm_guard.py         cost guardrails: only-on-signal, per-day cap, $ limit, caching
   risk.py              lot sizing, SL/TP, trailing stop, daily-loss guard
   executor.py          open / close / modify-SL through MT5, honours DRY_RUN
   runner.py            main loop
@@ -155,6 +157,63 @@ weeks of profitable demo results.
 
 Everything it does is written to `exness_bot/logs/bot.log` and
 `exness_bot/logs/trades.csv`.
+
+## LLM mode + keeping the OpenAI bill tiny
+
+The bot works fully **without** OpenAI — the rule engine is the default and costs
+**$0**. LLM mode just asks a model to sanity-check each *potential* trade.
+
+### Add your API key (do it in VS Code)
+
+1. Create a key: <https://platform.openai.com/api-keys>
+2. **Set a hard spend limit** and turn **auto-recharge OFF**:
+   <https://platform.openai.com/settings/organization/limits> (e.g. $5/month).
+   This is your real safety net.
+3. In VS Code open **`exness_bot/settings.py`** (you made it from
+   `settings.example.py`) and paste the key:
+   ```python
+   OPENAI_API_KEY = "sk-...your key..."
+   OPENAI_MODEL   = "gpt-4o-mini"   # cheapest capable model — keep this
+   ```
+   Save. `settings.py` is git-ignored, so the key is never committed.
+4. In `exness_bot/config.py` keep `USE_LLM = True`. Done — the guardrails below
+   are already on.
+
+### The cost guardrails (in `config.py`)
+
+| Setting | Default | What it saves |
+|---|---|---|
+| `LLM_ONLY_ON_SIGNAL` | `True` | **Biggest saver.** Calls the model *only* when the rule engine already sees a buy/sell/close setup. Quiet candles cost nothing. |
+| `LLM_MIN_SECONDS_BETWEEN_CALLS` | `300` | Hard floor on call frequency, whatever the timeframe. |
+| `LLM_MAX_CALLS_PER_DAY` | `40` | Hard cap per UTC day; after it, rules only. |
+| `LLM_DAILY_COST_LIMIT_USD` | `0.25` | Stops calling once the day's *estimated* spend hits this. |
+| `LLM_SKIP_OUTSIDE_SESSION` | `True` | No calls outside `SESSION_UTC_HOURS` / `TRADE_DAYS`. |
+| `LLM_CACHE_SNAPSHOT` | `True` | Reuses the last decision when the market barely moved — no call. |
+| `LLM_SEND_PRICE_HISTORY` | `False` | Keeps the last-10-closes array out of the prompt (fewer input tokens). |
+| `LLM_MAX_OUTPUT_TOKENS` | `80` | The reply is a tiny JSON object; capped low. |
+
+Every real call also uses `response_format=json_object` (no wasted retries) and a
+compact one-line snapshot. `logs/bot.log` prints a running spend estimate:
+`LLM call 3/40 today | ~256 in / 25 out tok | est $0.00005 | est day total $0.0002`.
+
+**Rough cost:** with `gpt-4o-mini`, one decision ≈ **~$0.00006**. Even at the
+40-calls/day cap that's **under $0.10 a month**; with *only-on-signal* it is
+usually a handful of calls a day — cents per month. The dashboard limit in step 2
+is the ceiling that actually matters.
+
+### Prompt presets (`config.py` → `LLM_PROMPT_NAME`)
+
+`exness_bot/prompts.py` ships five ready-made prompts — set the name in `config.py`:
+
+| Name | Style |
+|---|---|
+| `conservative` *(default)* | trend-aligned, textbook setups only, holds when unsure |
+| `trend_follow` | rides the 200-SMA trend, lets winners run |
+| `mean_reversion` | fades RSI extremes back to the slow SMA |
+| `breakout` | momentum breakouts with expanding ATR, in trend direction |
+| `swing` | rare, high-confluence entries; expects long holds |
+
+Add your own by dropping another template into `PRESETS` in `prompts.py`.
 
 ## Deploy (keep it running 24/5)
 

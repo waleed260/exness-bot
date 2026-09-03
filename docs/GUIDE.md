@@ -102,7 +102,7 @@ verdict.
 > afford to lose. 3) The built-in strategy is a *starting point*, not a money
 > machine — prove it with the backtester and the demo first.
 
-The rest of this document (Parts 1–9) is the detailed reference.
+The rest of this document (Parts 1–12) is the detailed reference.
 
 ---
 
@@ -155,7 +155,9 @@ to `exness_bot/logs/trades.csv`.
 | `exness_bot/mt5_client.py` | connect, account info, positions, candles; auto-resolves the broker symbol suffix; reports spread |
 | `exness_bot/indicators.py` | indicator maths + trailing-stop + session logic. No MT5 import, so it also runs inside the backtester |
 | `exness_bot/data.py` | pulls live candles, returns a DataFrame with indicator columns, drops the still-forming candle |
-| `exness_bot/strategy.py` | builds the prompt, calls the LLM, validates the JSON; rule-based fallback |
+| `exness_bot/strategy.py` | picks a prompt, applies the cost guardrails, calls the LLM, validates the JSON; rule-based fallback |
+| `exness_bot/prompts.py` | five named LLM prompt presets; `config.LLM_PROMPT_NAME` chooses one |
+| `exness_bot/llm_guard.py` | keeps OpenAI spend low: only-on-signal, per-day cap, daily $ limit, min gap, snapshot cache, spend estimate |
 | `exness_bot/risk.py` | lot sizing, SL/TP levels, break-even + trailing stop, daily-loss guard, session check |
 | `exness_bot/executor.py` | `mt5.order_send` for open / close / modify-stop, with retries; obeys `DRY_RUN` |
 | `exness_bot/runner.py` | the main loop that ties it together |
@@ -226,6 +228,23 @@ to `exness_bot/logs/trades.csv`.
 | `USE_LLM` | `True` | use the LLM if an API key is set, else the rule set |
 | `SMA_FAST` / `SMA_SLOW` | `20` / `50` | crossover SMAs |
 | `RSI_PERIOD` | `14` | RSI length |
+
+### LLM cost guardrails
+Only apply when `USE_LLM=True` **and** `settings.OPENAI_API_KEY` is set. Full
+walkthrough in Part 7.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `LLM_PROMPT_NAME` | `"conservative"` | which preset from `prompts.py`: `conservative` / `trend_follow` / `mean_reversion` / `breakout` / `swing` |
+| `LLM_ONLY_ON_SIGNAL` | `True` | call the model **only** when the rule engine already sees a buy/sell/close setup — the biggest cost saver |
+| `LLM_MIN_SECONDS_BETWEEN_CALLS` | `300` | hard floor on call frequency, regardless of timeframe |
+| `LLM_MAX_CALLS_PER_DAY` | `40` | hard cap per UTC day; `0` = unlimited |
+| `LLM_DAILY_COST_LIMIT_USD` | `0.25` | stop calling once the day's *estimated* spend hits this; `0` = off |
+| `LLM_SKIP_OUTSIDE_SESSION` | `True` | no calls outside `SESSION_UTC_HOURS` / `TRADE_DAYS` |
+| `LLM_CACHE_SNAPSHOT` | `True` | reuse the last decision when the snapshot barely moved (no call) |
+| `LLM_SEND_PRICE_HISTORY` | `False` | include `last_10_closes` in the prompt (more tokens; rarely worth it) |
+| `LLM_MAX_OUTPUT_TOKENS` | `80` | reply is a tiny JSON object; capped low |
+| `LLM_COST_PER_1K_INPUT` / `_OUTPUT` | `0.00015` / `0.0006` | `gpt-4o-mini` list price, used only for the spend estimate in the log |
 
 ### Backtest
 | Setting | Default | Meaning |
@@ -340,7 +359,84 @@ the trailing logic stops until it reconnects).
 
 ---
 
-## 7. Run it in VS Code (for developers)
+## 7. LLM mode & keeping the OpenAI bill tiny
+
+The bot runs fully **without** OpenAI — the rule engine is the default and costs
+**$0**. LLM mode adds a second opinion: on a *potential* trade it asks a model
+for a `buy / sell / close / hold` JSON decision, and still falls back to the rule
+result if anything goes wrong.
+
+### 7.1 Add your API key (do it in VS Code)
+
+1. Create a key at `platform.openai.com/api-keys`.
+2. **Set a hard monthly spend limit and turn auto-recharge OFF** at
+   `platform.openai.com/settings/organization/limits` (e.g. $5). This is the
+   ceiling that actually protects you.
+3. In VS Code open **`exness_bot/settings.py`** (the file you made from
+   `settings.example.py` in Part 5 / Part 8) and paste the key:
+   ```python
+   OPENAI_API_KEY = "sk-...your key..."
+   OPENAI_MODEL   = "gpt-4o-mini"     # cheapest capable model — keep this
+   ```
+   Save. `settings.py` is git-ignored, so the key is never committed.
+4. In `exness_bot/config.py` keep `USE_LLM = True`. The guardrails below are
+   already switched on.
+
+### 7.2 What keeps the cost down
+
+Every guardrail lives in the **`LLM cost guardrails`** block of `config.py`
+(table in Part 3). In plain terms:
+
+- **Only on a signal.** `LLM_ONLY_ON_SIGNAL=True` means the model is called
+  *only* when the free rule engine already sees a setup. On a quiet candle the
+  bot spends nothing. This alone removes ~90% of calls.
+- **A hard daily budget.** `LLM_MAX_CALLS_PER_DAY=40` and
+  `LLM_DAILY_COST_LIMIT_USD=0.25` — whichever is hit first, the bot goes
+  rules-only for the rest of the UTC day.
+- **A minimum gap.** `LLM_MIN_SECONDS_BETWEEN_CALLS=300` — never more than one
+  call per 5 minutes, whatever the timeframe.
+- **Session-aware.** `LLM_SKIP_OUTSIDE_SESSION=True` — no calls at night / on
+  weekends.
+- **Caching.** `LLM_CACHE_SNAPSHOT=True` — if the market barely moved since the
+  last call, the previous answer is reused with no new call.
+- **Small prompts.** A compact one-line snapshot, `last_10_closes` left out
+  (`LLM_SEND_PRICE_HISTORY=False`), reply capped at `LLM_MAX_OUTPUT_TOKENS=80`,
+  and `response_format=json_object` so a reply is never wasted.
+
+`logs/bot.log` prints a live estimate on every call:
+```
+LLM call 3/40 today | ~256 in / 25 out tok | est $0.00005 | est day total $0.0002
+```
+
+### 7.3 Rough cost
+
+With `gpt-4o-mini`, one decision is about **$0.00006** (≈ 260 input + 30 output
+tokens). Even flat-out at 40 calls/day that is **under $0.10 a month**. With
+*only-on-signal* it is usually a few calls a day — cents per month. Your
+dashboard limit from step 2 is the real cap.
+
+### 7.4 Choosing a prompt
+
+`exness_bot/prompts.py` ships five presets. Set the one you want in `config.py`:
+```python
+LLM_PROMPT_NAME = "conservative"
+```
+
+| Name | Style |
+|---|---|
+| `conservative` *(default)* | trend-aligned, textbook setups only, holds when unsure |
+| `trend_follow` | rides the 200-SMA trend, lets winners run |
+| `mean_reversion` | fades RSI extremes back toward the slow SMA |
+| `breakout` | momentum breakouts on expanding ATR, in the trend direction |
+| `swing` | rare, high-confluence entries; expects long holds |
+
+To write your own: add another template to `PRESETS` in `prompts.py` (keep the
+`+ _CONTRACT` on the end so the JSON reply still parses), then point
+`LLM_PROMPT_NAME` at it.
+
+---
+
+## 8. Run it in VS Code (for developers)
 
 1. Install **VS Code** and the **Python extension** (Microsoft).
 2. **File → Open Folder…** and pick the extracted `exness-bot` folder.
@@ -363,6 +459,8 @@ the trailing logic stops until it reconnects).
    copy exness_bot\settings.example.py exness_bot\settings.py    # Windows
    ```
    Open `exness_bot/settings.py` and fill in the demo login / password / server.
+   For LLM mode, paste `OPENAI_API_KEY` here too — see **Part 7**. Cost knobs and
+   the prompt preset live in `exness_bot/config.py` (`LLM cost guardrails`).
 7. Run from the VS Code terminal:
    - Backtest — `python -m exness_bot.backtest --csv data/EURUSD_M15.csv`
    - Bot (safe DRY-RUN) — `python -m exness_bot.runner`
@@ -375,40 +473,68 @@ them in the VS Code editor while it runs.
 
 ---
 
-## 8. Deploy — keep it running 24/5
+## 9. Deploy — where to run it and how (easy way)
 
-The bot only works while it is running **and** the Exness MT5 terminal is open and
-logged in. Pick one:
+**What "deploy" means here:** the bot has to stay running, and the **Exness MT5
+terminal has to stay open and logged in** next to it. There is no website to
+upload to. You just pick a Windows machine that is always on and start the bot on
+it.
 
-**Option A — your own PC (simplest).** Keep the PC on with MT5 running and
-`run.bat` (or `python -m exness_bot.runner`) going in a window.
-*Settings → Power & sleep → Sleep = Never* so it does not suspend.
+### Which machine?
 
-**Option B — a Windows VPS (recommended for real use).**
-1. Rent a small **Windows Server VPS** (~2 vCPU / 4 GB RAM is plenty; "Forex VPS"
-   plans work well and sit close to the broker).
-2. Connect with **Remote Desktop** (`mstsc`).
-3. On the VPS: install Python (same version rule as Part A / section 5), install
-   the **Exness MT5** terminal, log in, tick *Allow algorithmic trading*.
-4. Copy the `exness-bot` folder across, run `install.bat`, fill in `settings.py`.
-5. Start it with `run.bat`. It keeps running after you close the Remote Desktop
-   window — just don't log out of the Windows session.
-6. Auto-start after a reboot: put a shortcut to `run.bat` in `shell:startup`, and
-   set the MT5 terminal to start with Windows.
+| Choice | Good for | Notes |
+|---|---|---|
+| **Your own PC** | trying it, demo weeks | free; the PC must stay on 24/5 and not sleep |
+| **A Windows VPS** | real / unattended use | ~$10–30/mo; stays on always; search "Windows VPS" or "Forex VPS" |
 
-**Keep it alive unattended.** Run the bot under a supervisor that restarts it if
-it exits — e.g. **NSSM** (`nssm install exness-bot` → command
-`python -m exness_bot.runner`) to register it as a Windows service, or Task
-Scheduler with *Restart on failure*. Check `logs/bot.log` daily for the first
-week.
+macOS / Linux / phones / free cloud containers **cannot** run it — the
+`MetaTrader5` package needs a real Windows session. (Linux is fine for
+backtesting only.)
 
-**No cloud / Docker option.** `MetaTrader5` needs a real Windows session with the
-terminal running, so a Linux container cannot trade. A Linux box is fine for
-backtesting only.
+### Easy way — your own PC
+
+1. Finish Part A (or Part 8) so `run.bat` already works once.
+2. *Settings → Power & sleep* → set **Sleep = Never** (and "When plugged in, turn
+   off screen" is fine, sleep is not).
+3. Open the **Exness MT5** terminal, log into your account, leave it open.
+4. Double-click **`run.bat`**. Leave the black window open. That's it.
+5. Check `exness_bot\logs\bot.log` now and then.
+
+### Easy way — a Windows VPS (recommended once you go past demo)
+
+1. Buy a small **Windows Server VPS** (2 vCPU / 4 GB RAM is plenty).
+2. On your PC press <span class="kbd">Win</span>+<span class="kbd">R</span>, type
+   `mstsc`, enter the VPS address / user / password to get its desktop.
+3. On the VPS, do the normal one-time setup: install **Python** (same version
+   rule as Part 5), install the **Exness MT5** terminal and log in, tick
+   *Allow algorithmic trading*.
+4. Copy the `exness-bot` folder onto the VPS (just drag-and-drop into the Remote
+   Desktop window). Run **`install.bat`**, fill in `settings.py`.
+5. Run **`run.bat`**. Now close the Remote Desktop window (do **not** "Sign out")
+   — the bot and MT5 keep running on the VPS.
+6. Reconnect with `mstsc` any time to check on it.
+
+### Make it restart itself (optional, for real use)
+
+So it comes back after a crash or a VPS reboot:
+
+- **MT5:** in the terminal, *Tools → Options → …* and also add the terminal to
+  Windows startup so it launches on boot.
+- **The bot:** install **NSSM** (free), then in a terminal:
+  ```
+  nssm install exness-bot "C:\path\to\python.exe" -m exness_bot.runner
+  nssm set exness-bot AppDirectory "C:\path\to\exness-bot"
+  nssm start exness-bot
+  ```
+  Now Windows keeps the bot running and restarts it if it exits. Or use **Task
+  Scheduler** → new task → *Run whether user is logged on or not* + *Restart on
+  failure*.
+
+Check `logs/bot.log` every day for the first week.
 
 ---
 
-## 9. How good is it for Exness — honest assessment
+## 10. How good is it for Exness — honest assessment
 
 **Two different questions:**
 
@@ -444,7 +570,7 @@ backtest before any money is at stake.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -457,12 +583,15 @@ backtest before any money is at stake.
 | `OPEN rejected: retcode=10019` | not enough money for that lot; lower `RISK_PER_TRADE_PCT` or `MAX_LOT` |
 | No trades ever | trend filter + session window too strict, or `MIN_CONFIDENCE` too high; loosen and re-backtest |
 | LLM errors in the log | bad/empty `OPENAI_API_KEY`; the bot auto-falls back to the rule set |
+| Log always says `Skipping LLM (...)` | that's the guardrails working — it calls the model only on a rule-side setup, within budget and session. Loosen the `LLM_*` settings in `config.py` if you want more calls (costs more). |
+| `insufficient_quota` / `429` from OpenAI | add credit, or the dashboard spend limit is hit; bot keeps trading rules-only meanwhile |
+| Want $0 / no OpenAI at all | leave `OPENAI_API_KEY = ""` (or set `USE_LLM = False`) — pure rule engine |
 | `ModuleNotFoundError: MetaTrader5` on Win 10/11 | you installed 32-bit Python or Python is too new for a wheel; use the 64-bit installer, re-run `install.bat` |
 | Python installer says "not supported on this OS" (Win 7) | you downloaded a version newer than 3.8.10; get Python 3.8.10 |
 
 ---
 
-## 11. Safe-launch checklist
+## 12. Safe-launch checklist
 
 - [ ] Backtested on ≥ 2 years of data, on ≥ 2 symbols → positive expectancy, PF > 1.15
 - [ ] Walk-forward / out-of-sample check also positive

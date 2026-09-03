@@ -55,10 +55,28 @@ ORDER_RETRIES = 3         # retries on requote / price-changed
 TRADE_LOG_CSV = "exness_bot/logs/trades.csv"
 
 # ---------------- Strategy ----------------
-USE_LLM = True            # if False (or no API key) use the rule-based strategy
+USE_LLM = True            # if False (or no API key in settings.py) use the rule-based strategy only ($0)
 SMA_FAST = 20
 SMA_SLOW = 50
 RSI_PERIOD = 14
+
+# ---------------- LLM cost guardrails ----------------
+# These only matter when USE_LLM=True AND settings.OPENAI_API_KEY is set.
+# Defaults are tuned to keep spend to a few cents a day. Loosen at your own cost.
+LLM_PROMPT_NAME = "conservative"   # preset from exness_bot/prompts.py:
+                                   # conservative | trend_follow | mean_reversion | breakout | swing
+LLM_ONLY_ON_SIGNAL = True          # call the model ONLY when the rule engine sees a setup
+                                   # (buy/sell/close). Biggest single cost saver.
+LLM_MIN_SECONDS_BETWEEN_CALLS = 300 # never call more often than this, whatever the timeframe
+LLM_MAX_CALLS_PER_DAY = 40          # hard cap on calls per UTC day; 0 = unlimited
+LLM_DAILY_COST_LIMIT_USD = 0.25     # stop calling once the day's *estimated* spend hits this; 0 = off
+LLM_SKIP_OUTSIDE_SESSION = True     # no calls outside SESSION_UTC_HOURS / TRADE_DAYS
+LLM_CACHE_SNAPSHOT = True           # reuse the last decision when the snapshot has barely moved
+LLM_SEND_PRICE_HISTORY = False      # include last_10_closes in the prompt (more tokens, rarely worth it)
+LLM_MAX_OUTPUT_TOKENS = 80          # the reply is a tiny JSON object; cap it low
+# gpt-4o-mini list price (USD per 1K tokens) - only used for the spend estimate in the log:
+LLM_COST_PER_1K_INPUT = 0.00015
+LLM_COST_PER_1K_OUTPUT = 0.00060
 
 # ---------------- Backtest ----------------
 BT_SPREAD_POINTS = 12     # assumed round-trip spread cost per trade, in points
