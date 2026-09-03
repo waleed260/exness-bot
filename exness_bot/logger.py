@@ -1,5 +1,4 @@
-"""Self-contained logger so exness_bot does not depend on the research project's
-log/ package (which hardcodes a file path and needs colorama)."""
+"""Self-contained logger: writes to exness_bot/logs/bot.log and stdout."""
 
 import logging
 import os

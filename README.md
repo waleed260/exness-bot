@@ -44,7 +44,7 @@ exness_bot/
   backtest.py          historical test + edge metrics
 ```
 
-Full walkthrough: **[docs/StockAgent-Exness-Bot-Guide.pdf](docs/StockAgent-Exness-Bot-Guide.pdf)**
+Full walkthrough: **[docs/Exness-Bot-Guide.pdf](docs/Exness-Bot-Guide.pdf)**
 (source: [docs/GUIDE.md](docs/GUIDE.md)).
 
 ## Quick start

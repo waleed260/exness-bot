@@ -142,7 +142,7 @@ to `exness_bot/logs/trades.csv`.
 ### Backtest
 | Setting | Default | Meaning |
 |---|---|---|
-| `BT_SPREAD_POINTS` | `12` | spread cost (points) charged on every simulated trade |
+| `BT_SPREAD_POINTS` | `12` | spread cost (points) charged on every backtested trade |
 | `BT_COMMISSION_PER_LOT` | `7.0` | informational; commission assumption for Raw/Zero accounts |
 | `BT_START_BALANCE` | `1000` | starting balance for the money curve |
 
