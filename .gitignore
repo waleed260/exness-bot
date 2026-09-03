@@ -3,15 +3,17 @@ exness_bot/settings.py
 settings.py
 .env
 
-# logs
+# runtime output
 exness_bot/logs/
-log/*.txt
+*.log
+
+# backtest data / artefacts
+data/
+*.csv
 
 # python
 __pycache__/
 *.pyc
 .idea/
-
-# backtest artefacts
-exness_bot/logs/
-*.csv
+.venv/
+btvenv/

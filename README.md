@@ -1,81 +1,93 @@
-# When AI Meets Finance (StockAgent): Large Language Model-based Stock Trading in Simulated Real-world Environments
+# exness_bot — LLM + rule-based auto-trading bot for Exness (MetaTrader 5)
 
-![workflow](fig/workflow.png)
-![schematic](fig/schematic.png)
+A small, safe-by-default trading bot for an **Exness MT5** account. On every
+closed candle it builds a market snapshot, asks either an LLM or a built-in
+rule set for a `buy / sell / close / hold` decision, sizes the trade by risk,
+attaches an ATR stop/target, and manages the position with a break-even + ATR
+trailing stop.
 
-Can AI Agents simulate real-world trading environments to investigate the impact of external factors on stock trading activities (e.g., macroeconomics, policy changes, company fundamentals, and global events)? These factors, which frequently influence trading behaviors, are critical elements in the quest for maximizing investors' profits. Our work attempts to solve this problem through large language model-based agents. We have developed a multi-agent AI system called StockAgent, driven by LLMs,  designed to simulate investors' trading behaviors in response to the real stock market. The StockAgent allows users to evaluate the impact of different external factors on investor trading and to analyze trading behavior and profitability effects. Additionally, StockAgent avoids the test set leakage issue present in existing trading simulation systems based on AI Agents. Specifically, it prevents the model from leveraging prior knowledge it may have acquired related to the test data. We evaluate different LLMs under the framework of StockAgent in a stock trading environment that closely resembles real-world conditions. The experimental results demonstrate the impact of key external factors on stock market trading, including trading behavior and stock price fluctuation rules. This research explores the study of agents' free trading gaps in the context of no prior knowledge related to market data. The patterns identified through StockAgent simulations provide valuable insights for LLM-based investment advice and stock recommendation. 
+It ships with a **backtester** so you can check whether a strategy actually has
+an edge before risking anything.
 
-## Live Exness (MT5) adaptation
-This fork adds [`exness_bot/`](exness_bot/README.md): the simulated market is
-replaced with a live Exness MetaTrader 5 connection, keeping only the
-"ask an LLM for a JSON trade decision" idea. Safe by default (`DRY_RUN`,
-demo-only). See `exness_bot/README.md`. Trading real money is risky — test on
-a demo account first.
+> **Risk warning.** Automated FX/CFD trading loses money for most retail
+> traders. This is a starting point, **not tested against a live account**, and
+> not financial advice. Backtest it, then run it on a **demo account** for weeks
+> before considering real funds. Algo trading is allowed by Exness;
+> arbitrage / latency / tick-scalping style exploits are not — keep it "normal".
 
-## Link
-ARXIV LINK: https://arxiv.org/pdf/2407.18957
+## What it does
 
-Accepted by Transactions on Intelligent Systems and Technology (ACM TIST)
-## Architecture
-![architect](fig/workflow2.png)
+| Area | Detail |
+|------|--------|
+| **Entry** | SMA(fast/slow) crossover, filtered by RSI and a 200-SMA trend filter; or an LLM decision (OpenAI) with the rule set as fallback |
+| **Sizing** | lot chosen so a stop-out loses ~`RISK_PER_TRADE_PCT` of balance |
+| **Stop / target** | `SL = SL_ATR_MULT × ATR`, `TP = TP_ATR_MULT × ATR`, clamped to the broker minimum |
+| **Position management** | move stop to break-even at +1R, then ATR-trail from +1.5R |
+| **Entry filters** | max spread, trading-session window (UTC hours + weekdays), min ATR |
+| **Guards** | one position at a time, daily max-loss cut-off, `DRY_RUN`, demo-only lock |
+| **Execution** | `mt5.order_send` with retry on requote/price-changed; broker symbol-suffix auto-resolved (`EURUSD` → `EURUSDm` …) |
+| **Logging** | `exness_bot/logs/bot.log` + every trade to `exness_bot/logs/trades.csv` |
 
-The Workflow of Trading Simulation Flow. There are four Phases, namely **Initial Phase**, **Trading Phase**, **Post-Trading Phase** and **Special Events Phase**. In the Post-Trading Phase, Daily events and Quarterly events occur with daily and quarterly frequency respectively. A Specific Events Phase is an event that occurs randomly and acts on a random trading day.
-
-## Quick Start
-
-#### Environment
+## Files
 
 ```
-conda create --name stockagent python=3.9
-conda activate stockagent
+exness_bot/
+  config.py            all settings (DRY_RUN=True, DEMO_ONLY=True by default)
+  settings.example.py  copy to settings.py -> MT5 login + optional OpenAI key
+  mt5_client.py        connect / account / positions / rates / symbol resolve
+  indicators.py        indicator + trailing-stop + session math (no MT5 import)
+  data.py              live rates -> indicator DataFrame
+  strategy.py          LLM decision + rule-based fallback
+  risk.py              lot sizing, SL/TP, trailing stop, daily-loss guard
+  executor.py          open / close / modify-SL through MT5, honours DRY_RUN
+  runner.py            main loop
+  backtest.py          historical test + edge metrics
+```
 
-git clone https://github.com/dhh1995/PromptCoder
-cd PromptCoder
-pip install -e .
-cd ..
+Full walkthrough: **[docs/StockAgent-Exness-Bot-Guide.pdf](docs/StockAgent-Exness-Bot-Guide.pdf)**
+(source: [docs/GUIDE.md](docs/GUIDE.md)).
 
-git clone <This Github Project>
-cd Stockagent
+## Quick start
+
+### 1. Backtest (any OS, no MT5 needed)
+
+```
+pip install pandas
+# CSV columns: time, open, high, low, close
+python -m exness_bot.backtest --csv data/EURUSD_M15.csv
+```
+
+You get win rate, profit factor, expectancy (in R), max drawdown and a blunt
+`EDGE / NO EDGE` verdict, plus `exness_bot/logs/backtest_trades.csv`.
+**Do not forward-test a strategy the backtest says has no edge.**
+
+### 2. Demo (Windows only — the `MetaTrader5` package needs Windows)
+
+```
 pip install -r requirements.txt
+copy exness_bot\settings.example.py exness_bot\settings.py   # then edit it
+python -m exness_bot.runner
 ```
 
-#### API keys
+`DRY_RUN=True` logs the orders it *would* place without touching the account.
+When it looks right on demo, set `DRY_RUN=False` (still a demo account).
 
-Use GPTs as agent LLM:
+### 3. Live
 
-```
-export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-```
+Deliberately awkward: in `config.py` set `DEMO_ONLY=False` **and**
+`CONFIRM_LIVE_STRING="I ACCEPT THE RISK"`, keep `MAX_LOT=0.01`, and only after
+weeks of profitable demo results.
 
-Use Gemini as agent LLM:
+## How good is it for Exness, really?
 
-```
-export GOOGLE_API_KEY=YOUR_GEMINI_API_KEY
-```
+- **Will it run correctly on Exness?** After a day or two of demo debugging
+  (server name, symbol suffix, terminal path): likely yes.
+- **Will the built-in strategy make real money?** Unlikely as-is. A basic SMA
+  crossover / generic LLM prompt has no proven edge, and spread + swap +
+  commission make the expected value negative. The value here is the
+  **framework**: safe execution, risk control, and a backtester to find and
+  verify an edge you bring yourself.
 
-#### Start simulation
+## Licence
 
-You can choose a basic LLM and start simulation in one line:
-
-```
-python main.py --model MODEL_NAME
-```
-
-We set gemini-pro for default LLM.
-
-#### About ’procoder‘
-
-Here we use the: https://github.com/dhh1995/PromptCoder.git this tool, please download after its installation.
-
-#### Citation
-If you find the code is valuable, please use this citation.
-```
-@article{zhang2024ai,
-  title={When ai meets finance (stockagent): Large language model-based stock trading in simulated real-world environments},
-  author={Zhang, Chong and Liu, Xinyi and Zhang, Zhongmou and Jin, Mingyu and Li, Lingyao and Wang, Zhenting and Hua, Wenyue and Shu, Dong and Zhu, Suiyuan and Jin, Xiaobo and others},
-  journal={arXiv preprint arXiv:2407.18957},
-  year={2024}
-}
-```
-
-
+MIT — see `LICENSE`.

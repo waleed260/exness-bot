@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>exness_bot — Step-by-Step Guide</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+         font-size: 10.5pt; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 21pt; margin: 0 0 4pt; }
+  h2 { font-size: 14pt; margin: 22pt 0 6pt; padding-bottom: 3pt;
+       border-bottom: 2px solid #2b6cb0; color: #2b3a4a; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14pt 0 4pt; color: #2b3a4a; page-break-after: avoid; }
+  p, li { orphans: 3; widows: 3; }
+  code, pre { font-family: "Liberation Mono", "DejaVu Sans Mono", Consolas, monospace; }
+  code { background: #f0f2f5; padding: 1px 4px; border-radius: 3px; font-size: 9.5pt; }
+  pre { background: #f6f8fa; border: 1px solid #d7dde3; border-radius: 5px;
+        padding: 9px 11px; font-size: 9pt; line-height: 1.4; white-space: pre-wrap;
+        page-break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; font-size: 9.3pt;
+          page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd3da; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #eef2f7; }
+  .lead { font-size: 11pt; color: #444; margin: 2pt 0 0; }
+  .meta { color: #667; font-size: 9.5pt; margin: 2pt 0 14pt; }
+  .warn { background: #fff6f6; border: 1px solid #f0b8b8; border-left: 4px solid #d64545;
+          border-radius: 4px; padding: 8px 12px; margin: 10pt 0; }
+  .ok   { background: #f2f9f2; border: 1px solid #bfe0bf; border-left: 4px solid #3a8a3a;
+          border-radius: 4px; padding: 8px 12px; margin: 10pt 0; }
+  .section { page-break-before: always; }
+  ul.check { list-style: none; padding-left: 0; }
+  ul.check li { margin: 4pt 0; }
+  .small { font-size: 9pt; color: #667; }
+</style>
+</head>
+<body>
+
+<h1>exness_bot — Step-by-Step Guide</h1>
+<p class="lead">LLM + rule-based auto-trading bot for Exness (MetaTrader&nbsp;5)</p>
+<p class="meta">Version 1.0 &nbsp;·&nbsp; Author: Waleed Hassan</p>
+
+<div class="warn">
+<strong>Read this first.</strong> Automated FX/CFD trading loses money for most
+retail traders. This bot is a <strong>framework and starting point</strong> and has
+<strong>not</strong> been run against a live account by the author. Always go
+<strong>backtest &rarr; demo for weeks &rarr; tiny live size</strong>, in that order.
+Algo trading is allowed by Exness; arbitrage, latency exploitation and quote-delay
+tick-scalping are not. Nothing here is financial advice.
+</div>
+
+<h2>1. What the bot does</h2>
+<p>Once per <strong>closed candle</strong> (default timeframe M15) it runs this pipeline:</p>
+<pre>MT5 price history
+      &#9660;
+indicators   SMA(20), SMA(50), RSI(14), ATR(14), 200-SMA trend
+      &#9660;
+strategy     LLM decision (OpenAI)  --falls back to-->  rule set
+      &#9660;                                    (SMA crossover + RSI + trend)
+decision     buy / sell / close / hold   (+ confidence 0..1)
+      &#9660;
+filters      session window? spread ok? min ATR? confidence >= min?
+             daily loss limit not hit? no position already open?
+      &#9660;
+risk         lot size from RISK_PER_TRADE_PCT
+             SL = SL_ATR_MULT x ATR,  TP = TP_ATR_MULT x ATR
+      &#9660;
+executor     mt5.order_send (retries on requote)   [skipped if DRY_RUN]</pre>
+
+<p>On <strong>every poll</strong> (default every 5&nbsp;s) it also manages any open position:</p>
+<ul>
+  <li>at <strong>+1.0R</strong> profit &rarr; move the stop loss to entry (break-even);</li>
+  <li>at <strong>+1.5R</strong> profit &rarr; trail the stop <code>2 &times; ATR</code> behind price;</li>
+  <li>the stop is only ever tightened, never loosened.</li>
+</ul>
+<p class="small"><code>R</code> = the initial risk distance (entry &rarr; stop loss).
+All activity is logged to <code>exness_bot/logs/bot.log</code>; each entry/exit is
+appended to <code>exness_bot/logs/trades.csv</code>.</p>
+
+<h2>2. What every file is for</h2>
+<table>
+<tr><th>File</th><th>Job</th></tr>
+<tr><td><code>exness_bot/config.py</code></td><td>all settings. <code>DRY_RUN=True</code>, <code>DEMO_ONLY=True</code> by default</td></tr>
+<tr><td><code>exness_bot/settings.example.py</code></td><td>copy to <code>settings.py</code>; MT5 login + optional OpenAI key (git-ignored)</td></tr>
+<tr><td><code>exness_bot/mt5_client.py</code></td><td>connect, account, positions, candles; auto-resolves the broker symbol suffix; reports spread</td></tr>
+<tr><td><code>exness_bot/indicators.py</code></td><td>indicator maths + trailing-stop + session logic. No MT5 import, so the backtester reuses it</td></tr>
+<tr><td><code>exness_bot/data.py</code></td><td>pulls live candles &rarr; DataFrame with indicator columns; drops the still-forming candle</td></tr>
+<tr><td><code>exness_bot/strategy.py</code></td><td>builds the prompt, calls the LLM, validates the JSON; rule-based fallback</td></tr>
+<tr><td><code>exness_bot/risk.py</code></td><td>lot sizing, SL/TP, break-even + trailing stop, daily-loss guard, session check</td></tr>
+<tr><td><code>exness_bot/executor.py</code></td><td><code>mt5.order_send</code> for open / close / modify-stop, with retries; obeys <code>DRY_RUN</code></td></tr>
+<tr><td><code>exness_bot/runner.py</code></td><td>the main loop that ties it together</td></tr>
+<tr><td><code>exness_bot/backtest.py</code></td><td>runs the rule strategy over history and prints edge metrics</td></tr>
+</table>
+
+<div class="section"></div>
+<h2>3. Every setting in <code>config.py</code></h2>
+
+<h3>Safety</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>DRY_RUN</code></td><td><code>True</code></td><td><code>True</code> = never send a real order, only log what it would do</td></tr>
+<tr><td><code>DEMO_ONLY</code></td><td><code>True</code></td><td>refuse to start if the connected account is a live account</td></tr>
+<tr><td><code>CONFIRM_LIVE_STRING</code></td><td><code>""</code></td><td>must equal <code>"I ACCEPT THE RISK"</code> to run on a live account</td></tr>
+</table>
+
+<h3>Market</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>SYMBOL</code></td><td><code>EURUSD</code></td><td>base name; broker suffix (<code>m</code>, <code>.</code>, <code>z</code> &hellip;) found automatically</td></tr>
+<tr><td><code>TIMEFRAME</code></td><td><code>M15</code></td><td>candle used for decisions</td></tr>
+<tr><td><code>LOOKBACK_BARS</code></td><td><code>400</code></td><td>candles pulled for indicators / LLM context</td></tr>
+</table>
+
+<h3>Risk</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>RISK_PER_TRADE_PCT</code></td><td><code>0.5</code></td><td>percent of balance lost if the stop is hit</td></tr>
+<tr><td><code>FIXED_LOT_FALLBACK</code></td><td><code>0.01</code></td><td>lot used if sizing can't be computed</td></tr>
+<tr><td><code>MAX_LOT</code></td><td><code>0.10</code></td><td>hard cap on lot size</td></tr>
+<tr><td><code>MAX_OPEN_POSITIONS</code></td><td><code>1</code></td><td>positions allowed at once on this symbol</td></tr>
+<tr><td><code>ATR_PERIOD</code></td><td><code>14</code></td><td>ATR length</td></tr>
+<tr><td><code>SL_ATR_MULT</code></td><td><code>2.0</code></td><td>stop distance = this &times; ATR</td></tr>
+<tr><td><code>TP_ATR_MULT</code></td><td><code>3.0</code></td><td>target distance = this &times; ATR</td></tr>
+<tr><td><code>MIN_ATR_POINTS</code></td><td><code>0</code></td><td>skip entries when ATR (points) is below this; <code>0</code> = off</td></tr>
+<tr><td><code>DAILY_MAX_LOSS_PCT</code></td><td><code>3.0</code></td><td>stop opening trades for the day after this equity drawdown</td></tr>
+<tr><td><code>MIN_CONFIDENCE</code></td><td><code>0.55</code></td><td>ignore buy/sell signals weaker than this</td></tr>
+</table>
+
+<h3>Trailing / break-even</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>BREAKEVEN_AT_R</code></td><td><code>1.0</code></td><td>move stop to entry once profit reaches this many R; <code>0</code> = off</td></tr>
+<tr><td><code>TRAIL_AT_R</code></td><td><code>1.5</code></td><td>start trailing once profit reaches this many R; <code>0</code> = off</td></tr>
+<tr><td><code>TRAIL_ATR_MULT</code></td><td><code>2.0</code></td><td>trailing stop sits this &times; ATR behind price</td></tr>
+</table>
+
+<h3>Entry filters</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>MAX_SPREAD_POINTS</code></td><td><code>25</code></td><td>skip entries when the spread is wider than this</td></tr>
+<tr><td><code>USE_TREND_FILTER</code></td><td><code>True</code></td><td>only long in an up-trend, only short in a down-trend</td></tr>
+<tr><td><code>TREND_SMA</code></td><td><code>200</code></td><td>SMA used as the trend proxy</td></tr>
+<tr><td><code>TREND_SLOPE_LOOKBACK</code></td><td><code>20</code></td><td>bars back used to measure the trend SMA slope</td></tr>
+<tr><td><code>SESSION_UTC_HOURS</code></td><td><code>[7, 16]</code></td><td>trade only between these UTC hours; <code>[]</code> = always</td></tr>
+<tr><td><code>TRADE_DAYS</code></td><td><code>[0,1,2,3,4]</code></td><td>weekdays allowed (Mon&ndash;Fri)</td></tr>
+</table>
+
+<h3>Execution</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>DEVIATION_POINTS</code></td><td><code>20</code></td><td>maximum slippage accepted, in points</td></tr>
+<tr><td><code>MAGIC</code></td><td><code>20240601</code></td><td>id stamped on this bot's orders</td></tr>
+<tr><td><code>POLL_SECONDS</code></td><td><code>5</code></td><td>how often the loop checks for a new candle / manages the stop</td></tr>
+<tr><td><code>ORDER_RETRIES</code></td><td><code>3</code></td><td>retries on requote / price-changed</td></tr>
+<tr><td><code>TRADE_LOG_CSV</code></td><td class="small"><code>exness_bot/logs/trades.csv</code></td><td>where trades are recorded</td></tr>
+</table>
+
+<h3>Strategy</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>USE_LLM</code></td><td><code>True</code></td><td>use the LLM if an API key is set, else the rule set</td></tr>
+<tr><td><code>SMA_FAST</code> / <code>SMA_SLOW</code></td><td><code>20</code> / <code>50</code></td><td>crossover SMAs</td></tr>
+<tr><td><code>RSI_PERIOD</code></td><td><code>14</code></td><td>RSI length</td></tr>
+</table>
+
+<h3>Backtest</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>BT_SPREAD_POINTS</code></td><td><code>12</code></td><td>spread cost (points) charged on every simulated trade</td></tr>
+<tr><td><code>BT_COMMISSION_PER_LOT</code></td><td><code>7.0</code></td><td>informational commission assumption for Raw/Zero accounts</td></tr>
+<tr><td><code>BT_START_BALANCE</code></td><td><code>1000</code></td><td>starting balance for the money curve</td></tr>
+</table>
+
+<div class="section"></div>
+<h2>4. Step-by-step: backtest (do this first)</h2>
+<p>Runs on <strong>any OS</strong> &mdash; no MetaTrader, no Windows needed.</p>
+<ol>
+<li>Install Python 3.10+ and pandas:
+<pre>pip install pandas</pre></li>
+<li>Get historical candles as a CSV with columns <code>time, open, high, low, close</code>
+(export from MT5: <em>View &rarr; Symbols &rarr; Bars</em>, or any data provider). Save as e.g.
+<code>data/EURUSD_M15.csv</code>.</li>
+<li>Run:
+<pre>python -m exness_bot.backtest --csv data/EURUSD_M15.csv</pre>
+On Windows with MT5 connected you can pull data directly instead:
+<pre>python -m exness_bot.backtest --mt5 180</pre></li>
+<li>Read the report:
+<pre>trades         : 15
+win rate       : 26.7%
+expectancy     : -0.604R per trade
+profit factor  : 0.30
+total          : -9.1R
+max drawdown   : 4.5%
+verdict        : NO EDGE - do not trade this as-is</pre>
+<ul>
+<li><strong>expectancy &gt; 0</strong> and <strong>profit factor &gt; 1.15</strong> &rarr; maybe an edge, forward-test it.</li>
+<li>otherwise &rarr; change the strategy or parameters and run again.</li>
+</ul></li>
+<li>Per-trade detail is written to <code>exness_bot/logs/backtest_trades.csv</code>.</li>
+</ol>
+<div class="warn">Never move to live money on a &ldquo;NO EDGE&rdquo; result.</div>
+
+<div class="section"></div>
+<h2>5. Step-by-step: demo on Windows</h2>
+<p>The <code>MetaTrader5</code> Python package only runs on <strong>Windows</strong> (a Windows VPS is fine).</p>
+<ol>
+<li>Create a <strong>demo</strong> account in the Exness Personal Area; note the login number, password and server (e.g. <code>Exness-MT5Trial</code>).</li>
+<li>Install the <strong>Exness MetaTrader 5</strong> terminal, log into the demo account.</li>
+<li>In the terminal: <strong>Tools &rarr; Options &rarr; Expert Advisors &rarr; Allow algorithmic trading</strong> (tick it).</li>
+<li>Install dependencies:
+<pre>pip install -r requirements.txt</pre></li>
+<li>Create your private config:
+<pre>copy exness_bot\settings.example.py exness_bot\settings.py</pre>
+Edit <code>exness_bot\settings.py</code>:
+<pre>MT5_PATH     = r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe"
+MT5_LOGIN    = 12345678
+MT5_PASSWORD = "your-demo-password"
+MT5_SERVER   = "Exness-MT5Trial"
+OPENAI_API_KEY = ""          # leave empty to use the rule-based strategy
+OPENAI_MODEL   = "gpt-4o-mini"</pre>
+<span class="small">(<code>settings.py</code> is git-ignored &mdash; credentials never get committed.)</span></li>
+<li>First run with <code>DRY_RUN = True</code> (the default):
+<pre>python -m exness_bot.runner</pre>
+Watch <code>exness_bot/logs/bot.log</code>. You'll see decisions and lines like
+<code>[DRY_RUN] would OPEN buy 0.02 EURUSD ...</code>. No orders are sent.</li>
+<li>When the dry-run behaviour looks sane, set <code>DRY_RUN = False</code> in
+<code>exness_bot/config.py</code> and run again. Now it trades the <strong>demo</strong>
+account for real. Let it run for <strong>several weeks</strong>; review <code>logs/trades.csv</code>.</li>
+</ol>
+
+<div class="section"></div>
+<h2>6. Step-by-step: going live (only after profitable demo)</h2>
+<ol>
+<li>In <code>exness_bot/config.py</code>:
+<pre>DEMO_ONLY = False
+CONFIRM_LIVE_STRING = "I ACCEPT THE RISK"
+MAX_LOT = 0.01
+RISK_PER_TRADE_PCT = 0.25      # start smaller than on demo</pre></li>
+<li>Put your <strong>live</strong> account details in <code>settings.py</code>.</li>
+<li>Run <code>python -m exness_bot.runner</code>. It logs a warning that it is on a live account.</li>
+<li>Watch it daily for the first weeks. Keep the daily loss limit tight.</li>
+<li>Scale size up only after months of consistent results, never faster than your drawdown tolerance.</li>
+</ol>
+<p class="small">Keep the machine/VPS on and the MT5 terminal running. If the terminal
+closes, the bot loses its connection &mdash; open positions keep their broker-side
+SL/TP, but the trailing logic pauses until it reconnects.</p>
+
+<div class="section"></div>
+<h2>7. How good is it for Exness &mdash; honest assessment</h2>
+
+<h3>a) Will it work <em>technically</em> on Exness?</h3>
+<p>Fairly likely after a short debugging pass on demo. Usual first-run snags:</p>
+<table>
+<tr><th>Snag</th><th>Fix</th></tr>
+<tr><td>wrong <code>MT5_SERVER</code> string</td><td><code>initialize failed</code> &rarr; copy the exact server name from the terminal</td></tr>
+<tr><td>symbol is <code>EURUSDm</code> / <code>EURUSD.z</code> on your account</td><td>handled automatically; check the log line <code>Resolved symbol EURUSD -&gt; ...</code></td></tr>
+<tr><td>"AutoTrading disabled"</td><td>step 5.3 above</td></tr>
+<tr><td>broker min stop distance &gt; your ATR stop</td><td>the bot clamps it; on very tight timeframes SL/TP get pushed out &mdash; use a higher timeframe</td></tr>
+</table>
+<p>Rough chance of a clean demo run within a day or two: <strong>~85%</strong>.</p>
+
+<h3>b) Will it make real profit?</h3>
+<p>The built-in strategy (SMA crossover + RSI + trend filter, or a generic LLM prompt)
+is a <strong>baseline, not an edge</strong>. After spread, swap and commission its
+expected value is around zero-to-negative. Realistic odds that this exact
+configuration is net-profitable over a year: <strong>~10&ndash;15%</strong>, in line with
+retail algo-trading outcomes generally.</p>
+<p><strong>What actually moves that number:</strong></p>
+<ul>
+<li>A strategy with a tested statistical edge &mdash; validate with <code>backtest.py</code>
+over several years and multiple symbols, then walk-forward.</li>
+<li>Trading the right sessions / instruments for that edge.</li>
+<li>Costs: a low-spread account type; avoid holding across the 3-day swap.</li>
+<li>Risk discipline: small <code>RISK_PER_TRADE_PCT</code>, a hard daily stop &mdash;
+which this bot already enforces.</li>
+</ul>
+<div class="ok"><strong>Bottom line:</strong> treat this as a solid <em>execution and risk</em>
+framework with a <em>backtester</em> attached. The profitable idea has to be yours and
+has to survive the backtest before any money is at stake.</div>
+
+<div class="section"></div>
+<h2>8. Troubleshooting</h2>
+<table>
+<tr><th>Symptom</th><th>Cause / fix</th></tr>
+<tr><td><code>settings.py not found</code></td><td>you didn't copy <code>settings.example.py</code> &rarr; <code>settings.py</code></td></tr>
+<tr><td><code>mt5.initialize failed</code></td><td>wrong <code>MT5_PATH</code>, <code>MT5_SERVER</code>, login or password; terminal not installed</td></tr>
+<tr><td><code>Symbol EURUSD(+suffix) not found</code></td><td>your account uses a different name; add its suffix to <code>_SUFFIXES</code> in <code>mt5_client.py</code></td></tr>
+<tr><td>Decisions logged but no orders</td><td><code>DRY_RUN</code> is still <code>True</code></td></tr>
+<tr><td><code>OPEN rejected: retcode=10027</code></td><td>AutoTrading disabled in the terminal</td></tr>
+<tr><td><code>OPEN rejected: retcode=10016</code></td><td>invalid stops (broker min distance); raise <code>SL_ATR_MULT</code> or use a higher timeframe</td></tr>
+<tr><td><code>OPEN rejected: retcode=10019</code></td><td>not enough money for that lot; lower <code>RISK_PER_TRADE_PCT</code> or <code>MAX_LOT</code></td></tr>
+<tr><td>No trades ever</td><td>trend filter + session window too strict, or <code>MIN_CONFIDENCE</code> too high; loosen and re-backtest</td></tr>
+<tr><td>LLM errors in the log</td><td>bad/empty <code>OPENAI_API_KEY</code>; the bot auto-falls back to the rule set</td></tr>
+</table>
+
+<h2>9. Safe-launch checklist</h2>
+<ul class="check">
+<li>[ ] Backtested on &ge; 2 years of data, on &ge; 2 symbols &rarr; positive expectancy, PF &gt; 1.15</li>
+<li>[ ] Walk-forward / out-of-sample check also positive</li>
+<li>[ ] Ran on demo with <code>DRY_RUN=True</code>, decisions look sane in the log</li>
+<li>[ ] Ran on demo with <code>DRY_RUN=False</code> for &ge; 4 weeks &rarr; result matches the backtest</li>
+<li>[ ] <code>RISK_PER_TRADE_PCT</code> &le; 0.5, <code>DAILY_MAX_LOSS_PCT</code> &le; 3, <code>MAX_LOT</code> small</li>
+<li>[ ] Account type has low spread; you understand swap on your instrument</li>
+<li>[ ] VPS / machine stays on; MT5 terminal set to start with the OS</li>
+<li>[ ] You can afford to lose the whole account balance</li>
+</ul>
+<p>Only when every box is ticked: set the two live flags and start at <code>0.01</code> lots.</p>
+
+</body>
+</html>
