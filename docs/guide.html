@@ -32,13 +32,19 @@
   ul.check { list-style: none; padding-left: 0; }
   ul.check li { margin: 4pt 0; }
   .small { font-size: 9pt; color: #667; }
+  .easy { background: #eef5ff; border: 1px solid #b8d0f0; border-left: 4px solid #2b6cb0;
+          border-radius: 4px; padding: 10px 14px; margin: 10pt 0; }
+  ol.steps > li { margin: 7pt 0 7pt 0; padding-left: 4px; }
+  ol.steps > li > strong { display: block; margin-bottom: 2pt; }
+  .kbd { background: #eee; border: 1px solid #bbb; border-radius: 3px; padding: 0 4px;
+         font-family: monospace; font-size: 9pt; }
 </style>
 </head>
 <body>
 
 <h1>exness_bot — Step-by-Step Guide</h1>
 <p class="lead">LLM + rule-based auto-trading bot for Exness (MetaTrader&nbsp;5)</p>
-<p class="meta">Version 1.0 &nbsp;·&nbsp; Author: Waleed Hassan</p>
+<p class="meta">Version 1.1 &nbsp;·&nbsp; Author: Waleed Hassan &nbsp;·&nbsp; Runs on Windows 7, 10 and 11</p>
 
 <div class="warn">
 <strong>Read this first.</strong> Automated FX/CFD trading loses money for most
@@ -49,6 +55,99 @@ Algo trading is allowed by Exness; arbitrage, latency exploitation and quote-del
 tick-scalping are not. Nothing here is financial advice.
 </div>
 
+<h2>Part A &mdash; The easy way (no coding needed)</h2>
+<p>If you are not a programmer, follow just this part. You need a
+<strong>Windows PC</strong> (7, 10 or 11), a <strong>free Exness demo account</strong>,
+and about <strong>20 minutes</strong>. You will not type any code &mdash; only
+double-click a few files and fill in one form.</p>
+
+<ol class="steps">
+<li><strong>Step 1 &mdash; Install Python (one time)</strong>
+  Go to <code>python.org/downloads</code>.
+  <ul>
+    <li><strong>Windows 7:</strong> download <strong>Python 3.8.10</strong>
+        (page: <code>python.org/downloads/release/python-3810/</code> &rarr; "Windows installer 64-bit").
+        Newer Python versions do <em>not</em> install on Windows 7.</li>
+    <li><strong>Windows 10 / 11:</strong> download the latest Python 3.</li>
+  </ul>
+  Run the installer. <strong>Tick the box "Add Python to PATH"</strong>, then click
+  <em>Install Now</em>.
+</li>
+
+<li><strong>Step 2 &mdash; Download the bot</strong>
+  Open <code>github.com/waleed260/exness-bot</code>. Click the green
+  <strong>Code</strong> button &rarr; <strong>Download ZIP</strong>.
+  Right-click the downloaded ZIP &rarr; <em>Extract All</em>. Remember where the
+  folder is (e.g. your Desktop).
+</li>
+
+<li><strong>Step 3 &mdash; Install MetaTrader 5 from Exness</strong>
+  In your Exness Personal Area, create a <strong>demo</strong> account and note its
+  <em>login number</em>, <em>password</em> and <em>server</em> (e.g.
+  <code>Exness-MT5Trial</code>). Download and install the <strong>Exness
+  MetaTrader 5</strong> terminal and log into that demo account.
+  In MT5: <strong>Tools &rarr; Options &rarr; Expert Advisors</strong> &rarr; tick
+  <strong>"Allow algorithmic trading"</strong> &rarr; OK.
+</li>
+
+<li><strong>Step 4 &mdash; Set it up (one time)</strong>
+  Open the extracted bot folder. Double-click <strong><code>install.bat</code></strong>.
+  A black window installs everything (a few minutes), then a small text file opens
+  in Notepad. Fill in your demo <em>login number</em>, <em>password</em> and
+  <em>server</em> between the quote marks, then <strong>Save</strong>
+  (<span class="kbd">Ctrl</span>+<span class="kbd">S</span>) and close Notepad.
+  <br><span class="small">If it says "Python is not installed", you missed the
+  "Add Python to PATH" tick in Step 1 &mdash; re-run the Python installer and
+  choose <em>Modify</em>.</span>
+</li>
+
+<li><strong>Step 5 &mdash; Run it</strong>
+  Double-click <strong><code>run.bat</code></strong>. A black window opens and starts
+  printing what the bot is doing. It is in <strong>safe DRY-RUN mode</strong>: it
+  makes decisions and writes them down but <strong>does not place any real
+  orders</strong>. Leave it running as long as you like.
+  <br>To stop: click the window and press
+  <span class="kbd">Ctrl</span>+<span class="kbd">C</span>, or just close the window.
+</li>
+
+<li><strong>Step 6 &mdash; See what it did</strong>
+  Inside the bot folder open <code>exness_bot\logs\</code>:
+  <code>bot.log</code> is the full running commentary;
+  <code>trades.csv</code> lists every trade it opened/closed (open it in Excel).
+</li>
+
+<li><strong>Step 7 &mdash; Test on past data (optional but recommended)</strong>
+  In MetaTrader 5: <em>View &rarr; Symbols &rarr; Bars</em>, pick your pair and
+  timeframe, <em>Export Bars</em> to a CSV file. Then double-click
+  <strong><code>backtest.bat</code></strong> and drag that CSV into the window.
+  It prints whether the strategy would have made or lost money, and a plain
+  <strong>EDGE / NO EDGE</strong> verdict.
+</li>
+
+<li><strong>Step 8 &mdash; Only when you are ready for more</strong>
+  <ul>
+    <li><em>Trade the demo for real</em> (still fake money): open
+      <code>exness_bot\config.py</code> in Notepad, find <code>DRY_RUN = True</code>,
+      change it to <code>DRY_RUN = False</code>, save. Run <code>run.bat</code> again.</li>
+    <li><em>Real money:</em> only after several weeks of good demo results. See
+      Part&nbsp;6. Start with the smallest possible size.</li>
+  </ul>
+</li>
+</ol>
+
+<div class="easy">
+<strong>Golden rules.</strong>
+1) Never skip the demo stage.
+2) Never use money you cannot afford to lose.
+3) The built-in strategy is a <em>starting point</em>, not a money machine &mdash;
+prove it with the backtester and the demo first.
+</div>
+
+<p class="small">The rest of this document (Parts 1&ndash;9) is the detailed reference:
+what each part does, every setting, command-line usage, an honest assessment for
+Exness, and troubleshooting.</p>
+
+<div class="section"></div>
 <h2>1. What the bot does</h2>
 <p>Once per <strong>closed candle</strong> (default timeframe M15) it runs this pipeline:</p>
 <pre>MT5 price history
@@ -90,6 +189,7 @@ appended to <code>exness_bot/logs/trades.csv</code>.</p>
 <tr><td><code>exness_bot/executor.py</code></td><td><code>mt5.order_send</code> for open / close / modify-stop, with retries; obeys <code>DRY_RUN</code></td></tr>
 <tr><td><code>exness_bot/runner.py</code></td><td>the main loop that ties it together</td></tr>
 <tr><td><code>exness_bot/backtest.py</code></td><td>runs the rule strategy over history and prints edge metrics</td></tr>
+<tr><td><code>install.bat</code> / <code>run.bat</code> / <code>backtest.bat</code></td><td>Windows double-click helpers (Part A) &mdash; they just call the commands below for you</td></tr>
 </table>
 
 <div class="section"></div>
@@ -203,6 +303,11 @@ verdict        : NO EDGE - do not trade this as-is</pre>
 <div class="section"></div>
 <h2>5. Step-by-step: demo on Windows</h2>
 <p>The <code>MetaTrader5</code> Python package only runs on <strong>Windows</strong> (a Windows VPS is fine).</p>
+<p><strong>Python version:</strong> on <strong>Windows 7</strong> use <strong>Python 3.8.10</strong>
+&mdash; it is the last release that installs on Windows 7, and <code>requirements.txt</code>
+is pinned so the right package versions install automatically. On
+<strong>Windows 10 / 11</strong> use the latest Python 3. Either way, tick
+<em>"Add Python to PATH"</em> during install.</p>
 <ol>
 <li>Create a <strong>demo</strong> account in the Exness Personal Area; note the login number, password and server (e.g. <code>Exness-MT5Trial</code>).</li>
 <li>Install the <strong>Exness MetaTrader 5</strong> terminal, log into the demo account.</li>

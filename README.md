@@ -45,9 +45,26 @@ exness_bot/
 ```
 
 Full walkthrough: **[docs/Exness-Bot-Guide.pdf](docs/Exness-Bot-Guide.pdf)**
-(source: [docs/GUIDE.md](docs/GUIDE.md)).
+(source: [docs/GUIDE.md](docs/GUIDE.md)). The PDF opens with a **non-developer
+"easy way"** section — install Python, download the ZIP, double-click
+`install.bat`, then `run.bat`.
 
-## Quick start
+Runs on **Windows 7, 10 and 11**. On Windows 7 use **Python 3.8.10** (the last
+version that installs on Win 7); on Windows 10/11 use the latest Python 3.
+
+## Easy way (no coding)
+
+1. Install Python (tick *Add Python to PATH*).
+2. Download this repo: green **Code** button → **Download ZIP** → extract.
+3. Install Exness MetaTrader 5, log into a **demo** account, enable
+   *Allow algorithmic trading*.
+4. Double-click **`install.bat`** — it installs everything and opens a settings
+   file; paste your demo login/password/server, save.
+5. Double-click **`run.bat`** — the bot starts in safe DRY-RUN (no real orders).
+6. Results appear in `exness_bot\logs\` (`bot.log`, `trades.csv`).
+7. To test on past data: double-click **`backtest.bat`**.
+
+## Quick start (command line)
 
 ### 1. Backtest (any OS, no MT5 needed)
 

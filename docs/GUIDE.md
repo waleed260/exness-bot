@@ -2,7 +2,7 @@
 
 **LLM + rule-based auto-trading bot for Exness (MetaTrader 5)**
 
-Version 1.0 · Author: Waleed Hassan
+Version 1.1 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 
 ---
 
@@ -16,6 +16,63 @@ Version 1.0 · Author: Waleed Hassan
   tick-scalping that abuses quote delays are **not** — keep the strategy
   "normal" (minutes-to-hours holding, not millisecond scalping).
 - Nothing in this project is financial advice.
+
+---
+
+## Part A — The easy way (no coding needed)
+
+If you are not a programmer, follow just this part. You need a **Windows PC**
+(7, 10 or 11), a **free Exness demo account**, and about **20 minutes**. You will
+not type any code — only double-click a few files and fill in one form.
+
+**Step 1 — Install Python (one time).** Go to `python.org/downloads`.
+- **Windows 7:** download **Python 3.8.10**
+  (`python.org/downloads/release/python-3810/` → "Windows installer 64-bit").
+  Newer Python versions do not install on Windows 7.
+- **Windows 10 / 11:** download the latest Python 3.
+
+Run the installer, **tick "Add Python to PATH"**, then click *Install Now*.
+
+**Step 2 — Download the bot.** Open `github.com/waleed260/exness-bot` → green
+**Code** button → **Download ZIP**. Right-click the ZIP → *Extract All*. Remember
+the folder.
+
+**Step 3 — Install MetaTrader 5 from Exness.** In your Exness Personal Area create
+a **demo** account; note its *login number*, *password* and *server* (e.g.
+`Exness-MT5Trial`). Install the **Exness MetaTrader 5** terminal, log into the
+demo account. In MT5: **Tools → Options → Expert Advisors** → tick **"Allow
+algorithmic trading"** → OK.
+
+**Step 4 — Set it up (one time).** Open the bot folder, double-click
+**`install.bat`**. It installs everything (a few minutes), then opens a small
+text file in Notepad. Type your demo *login*, *password* and *server* between the
+quote marks, press **Ctrl+S**, close Notepad.
+*(If it says "Python is not installed", you missed the "Add Python to PATH" tick
+in Step 1 — re-run the Python installer and choose Modify.)*
+
+**Step 5 — Run it.** Double-click **`run.bat`**. A black window opens and prints
+what the bot is doing. It is in **safe DRY-RUN mode**: it decides and records but
+**places no real orders**. To stop: click the window and press **Ctrl+C**, or
+close it.
+
+**Step 6 — See what it did.** In the bot folder open `exness_bot\logs\`:
+`bot.log` (full commentary) and `trades.csv` (every trade — open in Excel).
+
+**Step 7 — Test on past data (recommended).** In MT5: *View → Symbols → Bars*,
+pick your pair/timeframe, *Export Bars* to a CSV. Double-click **`backtest.bat`**
+and drag the CSV into the window. It prints profit/loss and an **EDGE / NO EDGE**
+verdict.
+
+**Step 8 — Only when ready for more.**
+- *Trade the demo for real* (still fake money): open `exness_bot\config.py` in
+  Notepad, change `DRY_RUN = True` to `DRY_RUN = False`, save, run `run.bat` again.
+- *Real money:* only after weeks of good demo results (see Part 6). Smallest size.
+
+> **Golden rules.** 1) Never skip the demo stage. 2) Never use money you cannot
+> afford to lose. 3) The built-in strategy is a *starting point*, not a money
+> machine — prove it with the backtester and the demo first.
+
+The rest of this document (Parts 1–9) is the detailed reference.
 
 ---
 
@@ -73,6 +130,7 @@ to `exness_bot/logs/trades.csv`.
 | `exness_bot/executor.py` | `mt5.order_send` for open / close / modify-stop, with retries; obeys `DRY_RUN` |
 | `exness_bot/runner.py` | the main loop that ties it together |
 | `exness_bot/backtest.py` | runs the rule strategy over history and prints edge metrics |
+| `install.bat` / `run.bat` / `backtest.bat` | Windows double-click helpers (Part A) — they just call the commands below for you |
 
 ---
 
@@ -189,6 +247,11 @@ compare. **Never** move to live money on a "NO EDGE" result.
 ## 5. Step-by-step: demo on Windows
 
 The `MetaTrader5` Python package only runs on **Windows** (a Windows VPS is fine).
+
+**Python version:** on **Windows 7** use **Python 3.8.10** — the last release that
+installs on Win 7; `requirements.txt` is set so compatible package versions
+install automatically. On **Windows 10 / 11** use the latest Python 3. Tick
+*"Add Python to PATH"* during install.
 
 1. Create a **demo** account in the Exness Personal Area, note the login number,
    password and server (e.g. `Exness-MT5Trial`).
