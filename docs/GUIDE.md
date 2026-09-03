@@ -263,41 +263,94 @@ walkthrough in Part 7.
 
 ---
 
-## 4. Step-by-step: backtest (do this first)
+## 4. Step-by-step: backtest (do this FIRST)
 
-Runs on **any OS** — no MetaTrader, no Windows needed.
+**Why first:** the backtest tells you whether the strategy has any edge on past
+data *before* you risk a cent. If it says NO EDGE, do not run it on demo or live —
+change the settings and test again.
 
-1. Install Python 3.10+ and pandas:
-   ```
-   pip install pandas
-   ```
-2. Get historical candles as a CSV with columns `time, open, high, low, close`
-   (export from MT5: *View → Symbols → Bars*, or from any data provider).
-   Put it at e.g. `data/EURUSD_M15.csv`.
-3. Run:
-   ```
-   python -m exness_bot.backtest --csv data/EURUSD_M15.csv
-   ```
-   On Windows with MT5 connected you can instead pull data directly:
-   ```
-   python -m exness_bot.backtest --mt5 180
-   ```
-4. Read the report:
-   ```
-   trades         : 15
-   win rate       : 26.7%
-   expectancy     : -0.604R per trade
-   profit factor  : 0.30
-   total          : -9.1R
-   max drawdown   : 4.5%
-   verdict        : NO EDGE — do not trade this as-is
-   ```
-   - **expectancy > 0** and **profit factor > 1.15** → maybe an edge, forward-test it.
-   - otherwise → change the strategy or parameters and run again.
-5. Per-trade detail is written to `exness_bot/logs/backtest_trades.csv`.
+Runs on **any OS** (Windows / macOS / Linux) — no MetaTrader, no broker needed.
 
-Tune `config.py` (timeframe, SMA lengths, SL/TP multiples, filters), re-run,
-compare. **Never** move to live money on a "NO EDGE" result.
+### Step 1 — install Python + pandas
+
+In the VS Code terminal (or any terminal), from the `exness-bot` folder:
+```
+pip install pandas
+```
+(That also pulls `numpy`. You do **not** need `MetaTrader5` for a CSV backtest.)
+
+### Step 2 — get historical candles as a CSV
+
+You need one CSV with columns `time, open, high, low, close` (extra columns are
+ignored; header names like `<OPEN>` / `Date` are auto-mapped).
+
+**From the Exness MT5 terminal (best):**
+1. Open MT5 → menu **View → Symbols** (or press `Ctrl+U`).
+2. Pick your pair (e.g. `EURUSD`) on the left → tab **Bars**.
+3. Set **Timeframe = M15** (match `config.TIMEFRAME`), pick a wide date range
+   (2+ years is good), click **Request** then **Export Bars** → save as
+   `EURUSD_M15.csv`.
+4. Make a `data` folder inside `exness-bot` and move the file to
+   `data/EURUSD_M15.csv`.
+
+**Or a free source:** any provider that gives OHLC candles (Dukascopy, HistData,
+TraderMade, etc.). Save it with those column names.
+
+### Step 3 — run the backtest
+
+```
+python -m exness_bot.backtest --csv data/EURUSD_M15.csv
+```
+On Windows with the MT5 terminal open and `settings.py` filled in, you can skip
+the CSV and pull data straight from the broker instead:
+```
+python -m exness_bot.backtest --mt5 180        # last 180 days of config.TIMEFRAME
+```
+
+### Step 4 — read the report
+
+```
+ data span      : 2023-01-02 -> 2025-06-30 (910 days)
+ trades         : 148
+ win rate       : 41.9%
+ avg win / loss : +1.85R / -1.00R
+ expectancy     : +0.043R per trade
+ profit factor  : 1.21
+ total          : +6.4R
+ max drawdown   : 7.8%
+ balance        : 1000 -> 1187  (+19%)
+ verdict        : EDGE? maybe - forward test on demo
+```
+
+Pass / fail:
+- **PASS** = `expectancy` **> 0** *and* `profit factor` **> 1.15** *and* a
+  believable number of `trades` (say ≥ 100). → go to Part 5 and forward-test on
+  **demo**.
+- **FAIL** = anything else, or `verdict : NO EDGE`. → do **not** trade it; go to
+  Step 5.
+
+### Step 5 — if it fails, tune and re-run
+
+Change **one thing at a time** in `exness_bot/config.py`, save, run Step 3 again,
+compare:
+- `TIMEFRAME` (`_M5` / `_M15` / `_H1` …)
+- `SMA_FAST` / `SMA_SLOW`, `RSI_PERIOD`
+- `SL_ATR_MULT` / `TP_ATR_MULT`
+- filters: `USE_TREND_FILTER`, `SESSION_UTC_HOURS`, `MIN_CONFIDENCE`
+
+Per-trade detail for the last run is written to
+`exness_bot/logs/backtest_trades.csv` (open in Excel).
+
+### Step 6 — validate before trusting it
+
+Even a PASS can be luck. Before demo:
+- Re-run on a **different pair** (e.g. `GBPUSD`) — still positive?
+- Split your data: tune on the first half, then run **untouched** on the second
+  half — still positive? (walk-forward)
+- Only then move to Part 5.
+
+> **Never** move to demo-real or live money on a "NO EDGE" result. The built-in
+> SMA/RSI strategy is a starting point and usually shows no edge as-is.
 
 ---
 

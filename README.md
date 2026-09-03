@@ -100,16 +100,22 @@ time. Any machine that runs the MT5 terminal comfortably will run the bot.
 
 ## Quick start (command line)
 
-### 1. Backtest (any OS, no MT5 needed)
+### 1. Backtest (any OS, no MT5 needed) — do this first
 
-```
-pip install pandas
-# CSV columns: time, open, high, low, close
-python -m exness_bot.backtest --csv data/EURUSD_M15.csv
-```
+1. `pip install pandas`
+2. Get candles as a CSV with columns `time, open, high, low, close`. From the MT5
+   terminal: **View → Symbols → (pair) → Bars → M15 → Request → Export Bars**.
+   Save to `data/EURUSD_M15.csv`.
+3. `python -m exness_bot.backtest --csv data/EURUSD_M15.csv`
+   (or, on Windows with MT5 open: `python -m exness_bot.backtest --mt5 180`)
+4. Read the verdict. **PASS** = `expectancy > 0` **and** `profit factor > 1.15`
+   **and** enough trades (≥ ~100) → forward-test on demo. Anything else = **FAIL**,
+   don't trade it — change **one** setting in `config.py` and re-run.
+5. Validate a PASS: re-run on another pair, and walk-forward (tune on the first
+   half of the data, test on the untouched second half).
 
-You get win rate, profit factor, expectancy (in R), max drawdown and a blunt
-`EDGE / NO EDGE` verdict, plus `exness_bot/logs/backtest_trades.csv`.
+Per-trade detail lands in `exness_bot/logs/backtest_trades.csv`. Full step-by-step
+with screenshots-worth of detail is **Part 4 of the PDF guide**.
 **Do not forward-test a strategy the backtest says has no edge.**
 
 ### 2. Demo (Windows only — the `MetaTrader5` package needs Windows)

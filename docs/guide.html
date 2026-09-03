@@ -326,33 +326,81 @@ a bad run, they do <strong>not</strong> guarantee a profit.</p>
 </table>
 
 <div class="section"></div>
-<h2>4. Step-by-step: backtest (do this first)</h2>
-<p>Runs on <strong>any OS</strong> &mdash; no MetaTrader, no Windows needed.</p>
+<h2>4. Step-by-step: backtest (do this FIRST)</h2>
+<p><strong>Why first:</strong> the backtest tells you whether the strategy has any
+edge on past data <em>before</em> you risk a cent. If it says NO EDGE, do not run it
+on demo or live &mdash; change the settings and test again. Runs on
+<strong>any OS</strong> (Windows / macOS / Linux) &mdash; no MetaTrader, no broker
+needed.</p>
+
+<h3>Step 1 &mdash; install Python + pandas</h3>
+<p>In the VS Code terminal (or any terminal), from the <code>exness-bot</code> folder:</p>
+<pre>pip install pandas</pre>
+<p class="small">That also pulls <code>numpy</code>. You do <strong>not</strong> need
+<code>MetaTrader5</code> for a CSV backtest.</p>
+
+<h3>Step 2 &mdash; get historical candles as a CSV</h3>
+<p>One CSV with columns <code>time, open, high, low, close</code> (extra columns are
+ignored; headers like <code>&lt;OPEN&gt;</code> / <code>Date</code> are auto-mapped).</p>
+<p><strong>From the Exness MT5 terminal (best):</strong></p>
 <ol>
-<li>Install Python 3.10+ and pandas:
-<pre>pip install pandas</pre></li>
-<li>Get historical candles as a CSV with columns <code>time, open, high, low, close</code>
-(export from MT5: <em>View &rarr; Symbols &rarr; Bars</em>, or any data provider). Save as e.g.
+<li>MT5 &rarr; <strong>View &rarr; Symbols</strong> (or <span class="kbd">Ctrl</span>+<span class="kbd">U</span>).</li>
+<li>Pick your pair (e.g. <code>EURUSD</code>) &rarr; tab <strong>Bars</strong>.</li>
+<li><strong>Timeframe = M15</strong> (match <code>config.TIMEFRAME</code>), pick a wide
+date range (2+ years), click <strong>Request</strong> then <strong>Export Bars</strong>
+&rarr; save as <code>EURUSD_M15.csv</code>.</li>
+<li>Make a <code>data</code> folder inside <code>exness-bot</code>, move the file to
 <code>data/EURUSD_M15.csv</code>.</li>
-<li>Run:
-<pre>python -m exness_bot.backtest --csv data/EURUSD_M15.csv</pre>
-On Windows with MT5 connected you can pull data directly instead:
-<pre>python -m exness_bot.backtest --mt5 180</pre></li>
-<li>Read the report:
-<pre>trades         : 15
-win rate       : 26.7%
-expectancy     : -0.604R per trade
-profit factor  : 0.30
-total          : -9.1R
-max drawdown   : 4.5%
-verdict        : NO EDGE - do not trade this as-is</pre>
-<ul>
-<li><strong>expectancy &gt; 0</strong> and <strong>profit factor &gt; 1.15</strong> &rarr; maybe an edge, forward-test it.</li>
-<li>otherwise &rarr; change the strategy or parameters and run again.</li>
-</ul></li>
-<li>Per-trade detail is written to <code>exness_bot/logs/backtest_trades.csv</code>.</li>
 </ol>
-<div class="warn">Never move to live money on a &ldquo;NO EDGE&rdquo; result.</div>
+<p><strong>Or a free source:</strong> any OHLC-candle provider (Dukascopy, HistData,
+TraderMade&hellip;). Save it with those column names.</p>
+
+<h3>Step 3 &mdash; run the backtest</h3>
+<pre>python -m exness_bot.backtest --csv data/EURUSD_M15.csv</pre>
+<p>On Windows with the MT5 terminal open and <code>settings.py</code> filled in, you
+can skip the CSV and pull data straight from the broker:</p>
+<pre>python -m exness_bot.backtest --mt5 180        # last 180 days of config.TIMEFRAME</pre>
+
+<h3>Step 4 &mdash; read the report</h3>
+<pre> data span      : 2023-01-02 -> 2025-06-30 (910 days)
+ trades         : 148
+ win rate       : 41.9%
+ avg win / loss : +1.85R / -1.00R
+ expectancy     : +0.043R per trade
+ profit factor  : 1.21
+ total          : +6.4R
+ max drawdown   : 7.8%
+ balance        : 1000 -> 1187  (+19%)
+ verdict        : EDGE? maybe - forward test on demo</pre>
+<table>
+<tr><th>Result</th><th>Meaning</th></tr>
+<tr><td><strong>PASS</strong></td><td><code>expectancy &gt; 0</code> <em>and</em> <code>profit factor &gt; 1.15</code> <em>and</em> a believable trade count (say &ge; 100) &rarr; go to Part 5, forward-test on <strong>demo</strong></td></tr>
+<tr><td><strong>FAIL</strong></td><td>anything else, or <code>verdict : NO EDGE</code> &rarr; do <strong>not</strong> trade it; go to Step 5</td></tr>
+</table>
+
+<h3>Step 5 &mdash; if it fails, tune and re-run</h3>
+<p>Change <strong>one thing at a time</strong> in <code>exness_bot/config.py</code>,
+save, run Step 3 again, compare:</p>
+<ul>
+<li><code>TIMEFRAME</code> (<code>_M5</code> / <code>_M15</code> / <code>_H1</code> &hellip;)</li>
+<li><code>SMA_FAST</code> / <code>SMA_SLOW</code>, <code>RSI_PERIOD</code></li>
+<li><code>SL_ATR_MULT</code> / <code>TP_ATR_MULT</code></li>
+<li>filters: <code>USE_TREND_FILTER</code>, <code>SESSION_UTC_HOURS</code>, <code>MIN_CONFIDENCE</code></li>
+</ul>
+<p class="small">Per-trade detail for the last run is written to
+<code>exness_bot/logs/backtest_trades.csv</code> (open in Excel).</p>
+
+<h3>Step 6 &mdash; validate before trusting it</h3>
+<p>Even a PASS can be luck. Before demo:</p>
+<ul>
+<li>Re-run on a <strong>different pair</strong> (e.g. <code>GBPUSD</code>) &mdash; still positive?</li>
+<li>Tune on the first half of the data, then run <strong>untouched</strong> on the
+second half &mdash; still positive? (walk-forward)</li>
+<li>Only then move to Part 5.</li>
+</ul>
+<div class="warn"><strong>Never</strong> move to demo-real or live money on a
+&ldquo;NO EDGE&rdquo; result. The built-in SMA/RSI strategy is a starting point and
+usually shows no edge as-is.</div>
 
 <div class="section"></div>
 <h2>5. Step-by-step: demo on Windows</h2>
