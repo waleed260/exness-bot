@@ -42,13 +42,16 @@ def rule_based(snap, position_side):
     if position_side == "sell" and crossed_up:
         return {"action": "close", "confidence": 0.7, "reason": "fast SMA crossed above slow SMA"}
 
-    if position_side is None:
-        if crossed_up and rsi < 70:
-            return {"action": "buy", "confidence": 0.6, "reason": "bullish SMA crossover, RSI not overbought"}
-        if crossed_down and rsi > 30:
-            return {"action": "sell", "confidence": 0.6, "reason": "bearish SMA crossover, RSI not oversold"}
+    trend_ok_long = (not config.USE_TREND_FILTER) or snap.get("trend_up")
+    trend_ok_short = (not config.USE_TREND_FILTER) or snap.get("trend_down")
 
-    return {"action": "hold", "confidence": 0.5, "reason": "no crossover"}
+    if position_side is None:
+        if crossed_up and rsi < 70 and trend_ok_long:
+            return {"action": "buy", "confidence": 0.62, "reason": "bullish SMA crossover with trend, RSI ok"}
+        if crossed_down and rsi > 30 and trend_ok_short:
+            return {"action": "sell", "confidence": 0.62, "reason": "bearish SMA crossover with trend, RSI ok"}
+
+    return {"action": "hold", "confidence": 0.5, "reason": "no aligned crossover"}
 
 
 # --------------------------------------------------------------------------- #
@@ -57,7 +60,7 @@ def rule_based(snap, position_side):
 _PROMPT = """You are a disciplined intraday FX trader for {symbol} on the {tf} timeframe.
 Only trade with a clear edge; when unsure, hold.
 
-Market snapshot (latest CLOSED candle):
+Market snapshot (latest CLOSED candle; trend_up/trend_down come from a 200-SMA slope):
 {snap}
 
 Current open position for {symbol}: {pos}

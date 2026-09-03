@@ -1,8 +1,11 @@
 """Position sizing, stop-loss / take-profit levels and portfolio guards."""
 
+import datetime
+
 from exness_bot.logger import log
 from exness_bot import config
 from exness_bot import mt5_client
+from exness_bot import indicators
 
 
 def _round_lot(symbol_info, lot):
@@ -43,6 +46,19 @@ def sl_tp(side, entry_price, atr, symbol_info):
     if side == "buy":
         return entry_price - sl_dist, entry_price + tp_dist
     return entry_price + sl_dist, entry_price - tp_dist
+
+
+def new_trailing_sl(pos, atr, symbol_info, price):
+    """Improved SL price for an open MT5 position, or None to leave it."""
+    import MetaTrader5 as mt5
+    side = "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell"
+    new_sl = indicators.trailing_sl(side, pos.price_open, pos.sl, atr, price)
+    return round(new_sl, symbol_info.digits) if new_sl is not None else None
+
+
+def within_session():
+    """True if the current UTC time is inside the configured trading window."""
+    return indicators.session_ok(datetime.datetime.utcnow())
 
 
 class DailyGuard:

@@ -11,3 +11,7 @@ log/*.txt
 __pycache__/
 *.pyc
 .idea/
+
+# backtest artefacts
+exness_bot/logs/
+*.csv
