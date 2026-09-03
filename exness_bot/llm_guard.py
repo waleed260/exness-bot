@@ -29,6 +29,30 @@ def _utcnow():
     return datetime.datetime.utcnow()
 
 
+# Rough list prices (USD per 1K tokens) for the log's spend estimate only.
+# Approximate - update if OpenAI changes pricing; the bot never charges anything.
+_MODEL_PRICES = {
+    "gpt-4o-mini":  (0.00015, 0.00060),
+    "gpt-4.1-mini": (0.00040, 0.00160),
+    "gpt-4o":       (0.00250, 0.01000),
+    "gpt-4.1":      (0.00200, 0.00800),
+}
+
+
+def _prices():
+    """(in, out) price per 1K tokens: by model name if known, else the config fallback."""
+    model = ""
+    try:
+        import settings as _s
+        model = str(getattr(_s, "OPENAI_MODEL", "") or "").lower()
+    except Exception:
+        pass
+    for key, pr in _MODEL_PRICES.items():
+        if model.startswith(key):
+            return pr
+    return (config.LLM_COST_PER_1K_INPUT, config.LLM_COST_PER_1K_OUTPUT)
+
+
 def _in_session(ts):
     """UTC `ts` inside config's trading day/hour window? (same rule as indicators.session_ok,
     inlined so this module stays free of the pandas import)."""
@@ -120,6 +144,9 @@ def should_call_llm(snap, position_side, rule_decision):
         if gap < config.LLM_MIN_SECONDS_BETWEEN_CALLS:
             return False, f"only {gap:.0f}s since last call"
 
+    if getattr(config, "LLM_ENTRIES_ONLY", False) and position_side is not None:
+        return False, "entries-only (rules + SL/TP + trailing handle the exit)"
+
     if config.LLM_ONLY_ON_SIGNAL and not _rule_has_setup(rule_decision):
         return False, "no rule-side setup (LLM would likely say hold too)"
 
@@ -130,8 +157,8 @@ def estimate_cost(prompt_text, reply_text):
     """Rough USD estimate from character counts (~4 chars per token)."""
     in_tok = max(1, len(prompt_text or "") // 4)
     out_tok = max(1, len(reply_text or "") // 4)
-    cost = ((in_tok / 1000.0) * config.LLM_COST_PER_1K_INPUT
-            + (out_tok / 1000.0) * config.LLM_COST_PER_1K_OUTPUT)
+    p_in, p_out = _prices()
+    cost = (in_tok / 1000.0) * p_in + (out_tok / 1000.0) * p_out
     return cost, in_tok, out_tok
 
 

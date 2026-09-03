@@ -48,8 +48,11 @@
 
 <div class="warn">
 <strong>Read this first.</strong> Automated FX/CFD trading loses money for most
-retail traders. This bot is a <strong>framework and starting point</strong> and has
-<strong>not</strong> been run against a live account by the author. Always go
+retail traders. <strong>No bot can guarantee profit or "no losses" &mdash; this one
+cannot either.</strong> The conservative defaults (small size, 2%/day loss cap,
+10% total-loss kill switch, DRY-RUN, demo lock) keep a bad run <em>small</em>; they
+do not make it profitable. This bot is a <strong>framework and starting point</strong>
+and has <strong>not</strong> been run against a live account by the author. Always go
 <strong>backtest &rarr; demo for weeks &rarr; tiny live size</strong>, in that order.
 Algo trading is allowed by Exness; arbitrage, latency exploitation and quote-delay
 tick-scalping are not. Nothing here is financial advice.
@@ -242,17 +245,20 @@ appended to <code>exness_bot/logs/trades.csv</code>.</p>
 </table>
 
 <h3>Risk</h3>
+<p class="small">Defaults are deliberately conservative &mdash; they cap the damage of
+a bad run, they do <strong>not</strong> guarantee a profit.</p>
 <table>
 <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
-<tr><td><code>RISK_PER_TRADE_PCT</code></td><td><code>0.5</code></td><td>percent of balance lost if the stop is hit</td></tr>
-<tr><td><code>FIXED_LOT_FALLBACK</code></td><td><code>0.01</code></td><td>lot used if sizing can't be computed</td></tr>
-<tr><td><code>MAX_LOT</code></td><td><code>0.10</code></td><td>hard cap on lot size</td></tr>
+<tr><td><code>RISK_PER_TRADE_PCT</code></td><td><code>0.25</code></td><td>percent of balance lost if the stop is hit</td></tr>
+<tr><td><code>FIXED_LOT_FALLBACK</code></td><td><code>0.01</code></td><td>lot used if sizing can't be computed (also clamped to <code>MAX_LOT</code>)</td></tr>
+<tr><td><code>MAX_LOT</code></td><td><code>0.05</code></td><td>hard cap on lot size</td></tr>
 <tr><td><code>MAX_OPEN_POSITIONS</code></td><td><code>1</code></td><td>positions allowed at once on this symbol</td></tr>
 <tr><td><code>ATR_PERIOD</code></td><td><code>14</code></td><td>ATR length</td></tr>
 <tr><td><code>SL_ATR_MULT</code></td><td><code>2.0</code></td><td>stop distance = this &times; ATR</td></tr>
 <tr><td><code>TP_ATR_MULT</code></td><td><code>3.0</code></td><td>target distance = this &times; ATR</td></tr>
 <tr><td><code>MIN_ATR_POINTS</code></td><td><code>0</code></td><td>skip entries when ATR (points) is below this; <code>0</code> = off</td></tr>
-<tr><td><code>DAILY_MAX_LOSS_PCT</code></td><td><code>3.0</code></td><td>stop opening trades for the day after this equity drawdown</td></tr>
+<tr><td><code>DAILY_MAX_LOSS_PCT</code></td><td><code>2.0</code></td><td>stop opening trades for the day after this equity drawdown</td></tr>
+<tr><td><code>MAX_TOTAL_LOSS_PCT</code></td><td><code>10.0</code></td><td><strong>hard kill switch</strong> &mdash; stop the bot for good if equity falls this far below the equity it launched with; <code>0</code> = off</td></tr>
 <tr><td><code>MIN_CONFIDENCE</code></td><td><code>0.55</code></td><td>ignore buy/sell signals weaker than this</td></tr>
 </table>
 
@@ -300,14 +306,15 @@ appended to <code>exness_bot/logs/trades.csv</code>.</p>
 <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
 <tr><td><code>LLM_PROMPT_NAME</code></td><td><code>"conservative"</code></td><td>preset from <code>prompts.py</code>: <code>conservative</code> / <code>trend_follow</code> / <code>mean_reversion</code> / <code>breakout</code> / <code>swing</code></td></tr>
 <tr><td><code>LLM_ONLY_ON_SIGNAL</code></td><td><code>True</code></td><td>call the model <strong>only</strong> when the rule engine already sees a buy/sell/close setup &mdash; the biggest cost saver</td></tr>
+<tr><td><code>LLM_ENTRIES_ONLY</code></td><td><code>True</code></td><td>never spend a call on an exit &mdash; rules + SL/TP + trailing stop close positions; only entries go to the model</td></tr>
 <tr><td><code>LLM_MIN_SECONDS_BETWEEN_CALLS</code></td><td><code>300</code></td><td>hard floor on call frequency, whatever the timeframe</td></tr>
-<tr><td><code>LLM_MAX_CALLS_PER_DAY</code></td><td><code>40</code></td><td>hard cap per UTC day; <code>0</code> = unlimited</td></tr>
-<tr><td><code>LLM_DAILY_COST_LIMIT_USD</code></td><td><code>0.25</code></td><td>stop calling once the day's <em>estimated</em> spend hits this; <code>0</code> = off</td></tr>
+<tr><td><code>LLM_MAX_CALLS_PER_DAY</code></td><td><code>20</code></td><td>hard cap per UTC day; <code>0</code> = unlimited</td></tr>
+<tr><td><code>LLM_DAILY_COST_LIMIT_USD</code></td><td><code>0.15</code></td><td>stop calling once the day's <em>estimated</em> spend hits this; <code>0</code> = off</td></tr>
 <tr><td><code>LLM_SKIP_OUTSIDE_SESSION</code></td><td><code>True</code></td><td>no calls outside <code>SESSION_UTC_HOURS</code> / <code>TRADE_DAYS</code></td></tr>
 <tr><td><code>LLM_CACHE_SNAPSHOT</code></td><td><code>True</code></td><td>reuse the last decision when the snapshot barely moved (no call)</td></tr>
 <tr><td><code>LLM_SEND_PRICE_HISTORY</code></td><td><code>False</code></td><td>include <code>last_10_closes</code> in the prompt (more tokens; rarely worth it)</td></tr>
-<tr><td><code>LLM_MAX_OUTPUT_TOKENS</code></td><td><code>80</code></td><td>reply is a tiny JSON object; capped low</td></tr>
-<tr><td><code>LLM_COST_PER_1K_INPUT</code> / <code>_OUTPUT</code></td><td><code>0.00015</code> / <code>0.0006</code></td><td><code>gpt-4o-mini</code> list price, used only for the log's spend estimate</td></tr>
+<tr><td><code>LLM_MAX_OUTPUT_TOKENS</code></td><td><code>40</code></td><td>reply is a tiny JSON object; capped low</td></tr>
+<tr><td><code>LLM_COST_PER_1K_INPUT</code> / <code>_OUTPUT</code></td><td><code>0.00015</code> / <code>0.0006</code></td><td>fallback price for the log estimate; a known <code>OPENAI_MODEL</code> uses its own price automatically</td></tr>
 </table>
 
 <h3>Backtest</h3>
@@ -413,21 +420,40 @@ ceiling that actually protects you.</li>
 <li>In VS Code open <strong><code>exness_bot/settings.py</code></strong> (the file you
 made from <code>settings.example.py</code>) and paste the key:
 <pre>OPENAI_API_KEY = "sk-...your key..."
-OPENAI_MODEL   = "gpt-4o-mini"     # cheapest capable model - keep this</pre>
+OPENAI_MODEL   = "gpt-4o-mini"</pre>
 Save. <code>settings.py</code> is git-ignored, so the key is never committed.</li>
 <li>In <code>exness_bot/config.py</code> keep <code>USE_LLM = True</code>. The
 guardrails below are already switched on.</li>
 </ol>
 
-<h3>7.2 What keeps the cost down</h3>
+<h3>7.2 Which model handles trades best?</h3>
+<p><code>gpt-4o-mini</code> is the default and is fine for this simple SMA/RSI
+strategy. For stronger judgement on messy / borderline setups, set a bigger model
+in <code>settings.py</code> &mdash; the guardrails keep even the big ones at cents per
+month.</p>
+<table>
+<tr><th><code>OPENAI_MODEL</code></th><th>When to use it</th><th>~cost / decision</th></tr>
+<tr><td><code>gpt-4o-mini</code> <span class="small">(default)</span></td><td>simple strategy, tightest budget</td><td>~$0.00006</td></tr>
+<tr><td><code>gpt-4.1-mini</code></td><td>a bit sharper, still very cheap</td><td>~$0.0002</td></tr>
+<tr><td><code>gpt-4o</code></td><td>best at reading unclear / conflicting setups</td><td>~$0.001</td></tr>
+<tr><td><code>gpt-4.1</code></td><td>strongest reasoning of the four</td><td>~$0.002</td></tr>
+</table>
+<p class="small"><code>llm_guard.py</code> knows these prices, so the spend line in
+the log stays accurate whichever you pick; a newer model id just falls back to the
+<code>LLM_COST_PER_1K_*</code> estimate.</p>
+
+<h3>7.3 What keeps the cost down</h3>
 <p>Every guardrail lives in the <strong>LLM cost guardrails</strong> block of
 <code>config.py</code> (table in Part&nbsp;3). In plain terms:</p>
 <ul>
 <li><strong>Only on a signal.</strong> <code>LLM_ONLY_ON_SIGNAL=True</code> &mdash; the
 model is called <em>only</em> when the free rule engine already sees a setup. Quiet
 candles cost nothing. This alone removes most calls.</li>
-<li><strong>A hard daily budget.</strong> <code>LLM_MAX_CALLS_PER_DAY=40</code> and
-<code>LLM_DAILY_COST_LIMIT_USD=0.25</code> &mdash; whichever is hit first, the bot
+<li><strong>Entries only.</strong> <code>LLM_ENTRIES_ONLY=True</code> &mdash; the model is
+never asked about closing a trade; rules, the broker SL/TP and the trailing stop
+handle exits. Roughly halves what is left.</li>
+<li><strong>A hard daily budget.</strong> <code>LLM_MAX_CALLS_PER_DAY=20</code> and
+<code>LLM_DAILY_COST_LIMIT_USD=0.15</code> &mdash; whichever is hit first, the bot
 goes rules-only for the rest of the UTC day.</li>
 <li><strong>A minimum gap.</strong> <code>LLM_MIN_SECONDS_BETWEEN_CALLS=300</code> &mdash;
 at most one call per 5&nbsp;minutes.</li>
@@ -436,20 +462,21 @@ calls at night or on weekends.</li>
 <li><strong>Caching.</strong> <code>LLM_CACHE_SNAPSHOT=True</code> &mdash; if the market
 barely moved, the previous answer is reused with no new call.</li>
 <li><strong>Small prompts.</strong> A compact one-line snapshot, <code>last_10_closes</code>
-left out, reply capped at <code>LLM_MAX_OUTPUT_TOKENS=80</code>, and
+left out, reply capped at <code>LLM_MAX_OUTPUT_TOKENS=40</code>, and
 <code>response_format=json_object</code> so a reply is never wasted.</li>
 </ul>
 <p><code>logs/bot.log</code> prints a live estimate on every call:</p>
-<pre>LLM call 3/40 today | ~256 in / 25 out tok | est $0.00005 | est day total $0.0002</pre>
+<pre>LLM call 3/20 today | ~256 in / 20 out tok | est $0.00005 | est day total $0.0002</pre>
 
-<h3>7.3 Rough cost</h3>
+<h3>7.4 Rough cost</h3>
 <p>With <code>gpt-4o-mini</code>, one decision is about <strong>$0.00006</strong>
-(~260 input + 30 output tokens). Even flat-out at 40 calls/day that is
-<strong>under $0.10 a month</strong>; with <em>only-on-signal</em> it is usually a
-few calls a day &mdash; cents per month. Your dashboard limit from step&nbsp;2 is the
+(~260 input + 20 output tokens). Even flat-out at 20 calls/day that is
+<strong>a few cents a month</strong>; with <em>only-on-signal</em> + <em>entries-only</em>
+it is usually a handful of calls a day. With <code>gpt-4o</code> multiply by ~15 and
+it is still well under a dollar a month. Your dashboard limit from step&nbsp;2 is the
 real cap.</p>
 
-<h3>7.4 Choosing a prompt</h3>
+<h3>7.5 Choosing a prompt</h3>
 <p><code>exness_bot/prompts.py</code> ships five presets. Set the one you want in
 <code>config.py</code>: <code>LLM_PROMPT_NAME = "conservative"</code>.</p>
 <table>
@@ -607,6 +634,9 @@ has to survive the backtest before any money is at stake.</div>
 <tr><td>Log always says <code>Skipping LLM (...)</code></td><td>that's the guardrails working &mdash; it calls the model only on a rule-side setup, within budget and session. Loosen the <code>LLM_*</code> settings in <code>config.py</code> for more calls (costs more).</td></tr>
 <tr><td><code>insufficient_quota</code> / <code>429</code> from OpenAI</td><td>add credit, or the dashboard spend limit is hit; the bot keeps trading rules-only meanwhile</td></tr>
 <tr><td>Want $0 / no OpenAI at all</td><td>leave <code>OPENAI_API_KEY = ""</code> (or set <code>USE_LLM = False</code>) &mdash; pure rule engine</td></tr>
+<tr><td><code>OPEN rejected: retcode=10030</code> (Unsupported filling)</td><td>the bot now auto-retries FOK &rarr; IOC &rarr; RETURN; if it still fails, your account blocks market orders on that symbol</td></tr>
+<tr><td>Bot exits with <code>MAX_TOTAL_LOSS_PCT hit</code></td><td>equity fell 10% below launch &mdash; that's the kill switch. Review before restarting; adjust the % in <code>config.py</code></td></tr>
+<tr><td>Trade in the log but not in <code>trades.csv</code></td><td>the order was rejected &mdash; a rejection is logged as an error and no longer written as a fake fill</td></tr>
 <tr><td><code>ModuleNotFoundError: MetaTrader5</code> on Win 10/11</td><td>you installed 32-bit Python, or Python is too new for a wheel &mdash; use the 64-bit installer and re-run <code>install.bat</code></td></tr>
 <tr><td>Python installer says "not supported on this OS" (Win 7)</td><td>you downloaded a version newer than 3.8.10 &mdash; get Python 3.8.10</td></tr>
 </table>
@@ -617,7 +647,8 @@ has to survive the backtest before any money is at stake.</div>
 <li>[ ] Walk-forward / out-of-sample check also positive</li>
 <li>[ ] Ran on demo with <code>DRY_RUN=True</code>, decisions look sane in the log</li>
 <li>[ ] Ran on demo with <code>DRY_RUN=False</code> for &ge; 4 weeks &rarr; result matches the backtest</li>
-<li>[ ] <code>RISK_PER_TRADE_PCT</code> &le; 0.5, <code>DAILY_MAX_LOSS_PCT</code> &le; 3, <code>MAX_LOT</code> small</li>
+<li>[ ] <code>RISK_PER_TRADE_PCT</code> &le; 0.25, <code>DAILY_MAX_LOSS_PCT</code> &le; 2, <code>MAX_LOT</code> small</li>
+<li>[ ] <code>MAX_TOTAL_LOSS_PCT</code> set to a number you would actually accept losing</li>
 <li>[ ] Account type has low spread; you understand swap on your instrument</li>
 <li>[ ] VPS / machine stays on; MT5 terminal set to start with the OS</li>
 <li>[ ] You can afford to lose the whole account balance</li>

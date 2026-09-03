@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover
 
 # Exness lists the same instrument under different suffixes per account type
 # (EURUSD, EURUSDm, EURUSD.z, ...). Resolved once at startup by resolve_symbol().
-_SUFFIXES = ["", "m", "z", "c", ".", "._", "-", "_", ".r", ".raw", ".z", ".m"]
+_SUFFIXES = ["", "m", "z", "c", ".", "._", "-", "_", ".r", ".raw", "pro", ".pro", "e"]
 _RESOLVED = {"symbol": None}
 
 

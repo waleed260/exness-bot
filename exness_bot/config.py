@@ -22,15 +22,19 @@ TIMEFRAME = _M15          # candle used for decisions
 LOOKBACK_BARS = 400       # bars pulled for indicators / LLM context
 
 # ---------------- Risk ----------------
-RISK_PER_TRADE_PCT = 0.5  # % of balance risked per trade (used for lot sizing)
-FIXED_LOT_FALLBACK = 0.01 # used if lot sizing cannot be computed
-MAX_LOT = 0.10            # hard cap on lot size
+# Conservative by default: small size, tight loss caps. No bot can promise profit
+# or "no losses" - these limits just keep any single bad run small.
+RISK_PER_TRADE_PCT = 0.25 # % of balance risked per trade (used for lot sizing)
+FIXED_LOT_FALLBACK = 0.01 # used if lot sizing cannot be computed (also clamped to MAX_LOT)
+MAX_LOT = 0.05            # hard cap on lot size
 MAX_OPEN_POSITIONS = 1    # per symbol
 ATR_PERIOD = 14
 SL_ATR_MULT = 2.0         # stop loss distance = SL_ATR_MULT * ATR
 TP_ATR_MULT = 3.0         # take profit distance = TP_ATR_MULT * ATR
 MIN_ATR_POINTS = 0        # skip entries when ATR (in points) is below this (0 = off)
-DAILY_MAX_LOSS_PCT = 3.0  # stop trading for the day after this equity drawdown
+DAILY_MAX_LOSS_PCT = 2.0  # stop opening trades for the day after this equity drawdown
+MAX_TOTAL_LOSS_PCT = 10.0 # hard kill switch: stop the bot for good if equity falls
+                          # this far below the equity it launched with (0 = off)
 MIN_CONFIDENCE = 0.55     # ignore signals weaker than this
 
 # ---- trailing / break-even (managed every poll on the open position) ----
@@ -67,14 +71,18 @@ LLM_PROMPT_NAME = "conservative"   # preset from exness_bot/prompts.py:
                                    # conservative | trend_follow | mean_reversion | breakout | swing
 LLM_ONLY_ON_SIGNAL = True          # call the model ONLY when the rule engine sees a setup
                                    # (buy/sell/close). Biggest single cost saver.
+LLM_ENTRIES_ONLY = True            # never spend a call on an exit - let the rules + SL/TP
+                                   # + trailing stop handle closing. Only ask about entries.
 LLM_MIN_SECONDS_BETWEEN_CALLS = 300 # never call more often than this, whatever the timeframe
-LLM_MAX_CALLS_PER_DAY = 40          # hard cap on calls per UTC day; 0 = unlimited
-LLM_DAILY_COST_LIMIT_USD = 0.25     # stop calling once the day's *estimated* spend hits this; 0 = off
+LLM_MAX_CALLS_PER_DAY = 20          # hard cap on calls per UTC day; 0 = unlimited
+LLM_DAILY_COST_LIMIT_USD = 0.15     # stop calling once the day's *estimated* spend hits this; 0 = off
 LLM_SKIP_OUTSIDE_SESSION = True     # no calls outside SESSION_UTC_HOURS / TRADE_DAYS
 LLM_CACHE_SNAPSHOT = True           # reuse the last decision when the snapshot has barely moved
 LLM_SEND_PRICE_HISTORY = False      # include last_10_closes in the prompt (more tokens, rarely worth it)
-LLM_MAX_OUTPUT_TOKENS = 80          # the reply is a tiny JSON object; cap it low
-# gpt-4o-mini list price (USD per 1K tokens) - only used for the spend estimate in the log:
+LLM_MAX_OUTPUT_TOKENS = 40          # the reply is a tiny JSON object; cap it low
+# Fallback price (USD per 1K tokens) for the spend estimate in the log. If your
+# OPENAI_MODEL is a known one (gpt-4o-mini / gpt-4o / gpt-4.1-mini / gpt-4.1),
+# llm_guard uses that model's real price automatically and ignores these.
 LLM_COST_PER_1K_INPUT = 0.00015
 LLM_COST_PER_1K_OUTPUT = 0.00060
 

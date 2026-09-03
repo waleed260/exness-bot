@@ -9,6 +9,9 @@ Version 1.2 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 ## 0. Read this first (risk)
 
 - Automated FX/CFD trading loses money for the majority of retail traders.
+- **No bot can guarantee profit or "no losses" — this one cannot either.** The
+  conservative defaults (small size, 2%/day loss cap, 10% total-loss kill switch,
+  DRY-RUN, demo lock) keep a bad run *small*; they do not make it profitable.
 - This bot is a **framework and a starting point**. It has **not** been run
   against a live account by the author.
 - Always: **backtest → demo for weeks → tiny live size**, in that order.
@@ -183,17 +186,21 @@ to `exness_bot/logs/trades.csv`.
 | `LOOKBACK_BARS` | `400` | how many candles are pulled for indicators / LLM context |
 
 ### Risk
+Defaults are deliberately conservative. They cap the damage of a bad run — they
+do **not** guarantee a profit.
+
 | Setting | Default | Meaning |
 |---|---|---|
-| `RISK_PER_TRADE_PCT` | `0.5` | percent of balance lost if the stop is hit |
-| `FIXED_LOT_FALLBACK` | `0.01` | lot used if sizing can't be computed |
-| `MAX_LOT` | `0.10` | hard cap on lot size |
+| `RISK_PER_TRADE_PCT` | `0.25` | percent of balance lost if the stop is hit |
+| `FIXED_LOT_FALLBACK` | `0.01` | lot used if sizing can't be computed (also clamped to `MAX_LOT`) |
+| `MAX_LOT` | `0.05` | hard cap on lot size |
 | `MAX_OPEN_POSITIONS` | `1` | positions allowed at once on this symbol |
 | `ATR_PERIOD` | `14` | ATR length |
 | `SL_ATR_MULT` | `2.0` | stop distance = this × ATR |
 | `TP_ATR_MULT` | `3.0` | target distance = this × ATR |
 | `MIN_ATR_POINTS` | `0` | skip entries when ATR (in points) is below this; `0` = off |
-| `DAILY_MAX_LOSS_PCT` | `3.0` | stop opening trades for the day after this equity drawdown |
+| `DAILY_MAX_LOSS_PCT` | `2.0` | stop opening trades for the day after this equity drawdown |
+| `MAX_TOTAL_LOSS_PCT` | `10.0` | **hard kill switch** — stop the bot for good if equity falls this far below the equity it launched with; `0` = off |
 | `MIN_CONFIDENCE` | `0.55` | ignore buy/sell signals weaker than this |
 
 ### Trailing / break-even
@@ -237,14 +244,15 @@ walkthrough in Part 7.
 |---|---|---|
 | `LLM_PROMPT_NAME` | `"conservative"` | which preset from `prompts.py`: `conservative` / `trend_follow` / `mean_reversion` / `breakout` / `swing` |
 | `LLM_ONLY_ON_SIGNAL` | `True` | call the model **only** when the rule engine already sees a buy/sell/close setup — the biggest cost saver |
+| `LLM_ENTRIES_ONLY` | `True` | never spend a call on an exit — the rules + SL/TP + trailing stop close positions; only entries go to the model |
 | `LLM_MIN_SECONDS_BETWEEN_CALLS` | `300` | hard floor on call frequency, regardless of timeframe |
-| `LLM_MAX_CALLS_PER_DAY` | `40` | hard cap per UTC day; `0` = unlimited |
-| `LLM_DAILY_COST_LIMIT_USD` | `0.25` | stop calling once the day's *estimated* spend hits this; `0` = off |
+| `LLM_MAX_CALLS_PER_DAY` | `20` | hard cap per UTC day; `0` = unlimited |
+| `LLM_DAILY_COST_LIMIT_USD` | `0.15` | stop calling once the day's *estimated* spend hits this; `0` = off |
 | `LLM_SKIP_OUTSIDE_SESSION` | `True` | no calls outside `SESSION_UTC_HOURS` / `TRADE_DAYS` |
 | `LLM_CACHE_SNAPSHOT` | `True` | reuse the last decision when the snapshot barely moved (no call) |
 | `LLM_SEND_PRICE_HISTORY` | `False` | include `last_10_closes` in the prompt (more tokens; rarely worth it) |
-| `LLM_MAX_OUTPUT_TOKENS` | `80` | reply is a tiny JSON object; capped low |
-| `LLM_COST_PER_1K_INPUT` / `_OUTPUT` | `0.00015` / `0.0006` | `gpt-4o-mini` list price, used only for the spend estimate in the log |
+| `LLM_MAX_OUTPUT_TOKENS` | `40` | reply is a tiny JSON object; capped low |
+| `LLM_COST_PER_1K_INPUT` / `_OUTPUT` | `0.00015` / `0.0006` | fallback price for the log estimate; a known `OPENAI_MODEL` uses its own price automatically |
 
 ### Backtest
 | Setting | Default | Meaning |
@@ -376,13 +384,30 @@ result if anything goes wrong.
    `settings.example.py` in Part 5 / Part 8) and paste the key:
    ```python
    OPENAI_API_KEY = "sk-...your key..."
-   OPENAI_MODEL   = "gpt-4o-mini"     # cheapest capable model — keep this
+   OPENAI_MODEL   = "gpt-4o-mini"
    ```
    Save. `settings.py` is git-ignored, so the key is never committed.
 4. In `exness_bot/config.py` keep `USE_LLM = True`. The guardrails below are
    already switched on.
 
-### 7.2 What keeps the cost down
+### 7.2 Which model handles trades best?
+
+`gpt-4o-mini` is the default and is fine for this simple SMA/RSI strategy. If you
+want stronger judgement on messy / borderline setups, set a bigger model in
+`settings.py` — the guardrails keep even the big ones at cents per month.
+
+| `OPENAI_MODEL` | When to use it | ~cost / decision |
+|---|---|---|
+| `gpt-4o-mini` *(default)* | simple strategy, tightest budget | ~$0.00006 |
+| `gpt-4.1-mini` | a bit sharper, still very cheap | ~$0.0002 |
+| `gpt-4o` | best at reading unclear / conflicting setups | ~$0.001 |
+| `gpt-4.1` | strongest reasoning of the four | ~$0.002 |
+
+`llm_guard.py` knows these prices, so the spend line in the log stays accurate
+whichever you pick. A newer model id also works — the log just falls back to the
+`LLM_COST_PER_1K_*` estimate for it.
+
+### 7.3 What keeps the cost down
 
 Every guardrail lives in the **`LLM cost guardrails`** block of `config.py`
 (table in Part 3). In plain terms:
@@ -390,8 +415,11 @@ Every guardrail lives in the **`LLM cost guardrails`** block of `config.py`
 - **Only on a signal.** `LLM_ONLY_ON_SIGNAL=True` means the model is called
   *only* when the free rule engine already sees a setup. On a quiet candle the
   bot spends nothing. This alone removes ~90% of calls.
-- **A hard daily budget.** `LLM_MAX_CALLS_PER_DAY=40` and
-  `LLM_DAILY_COST_LIMIT_USD=0.25` — whichever is hit first, the bot goes
+- **Entries only.** `LLM_ENTRIES_ONLY=True` — the model is never asked about
+  closing a trade; the rules, the broker SL/TP and the trailing stop handle
+  exits. Roughly halves what is left.
+- **A hard daily budget.** `LLM_MAX_CALLS_PER_DAY=20` and
+  `LLM_DAILY_COST_LIMIT_USD=0.15` — whichever is hit first, the bot goes
   rules-only for the rest of the UTC day.
 - **A minimum gap.** `LLM_MIN_SECONDS_BETWEEN_CALLS=300` — never more than one
   call per 5 minutes, whatever the timeframe.
@@ -400,22 +428,23 @@ Every guardrail lives in the **`LLM cost guardrails`** block of `config.py`
 - **Caching.** `LLM_CACHE_SNAPSHOT=True` — if the market barely moved since the
   last call, the previous answer is reused with no new call.
 - **Small prompts.** A compact one-line snapshot, `last_10_closes` left out
-  (`LLM_SEND_PRICE_HISTORY=False`), reply capped at `LLM_MAX_OUTPUT_TOKENS=80`,
+  (`LLM_SEND_PRICE_HISTORY=False`), reply capped at `LLM_MAX_OUTPUT_TOKENS=40`,
   and `response_format=json_object` so a reply is never wasted.
 
 `logs/bot.log` prints a live estimate on every call:
 ```
-LLM call 3/40 today | ~256 in / 25 out tok | est $0.00005 | est day total $0.0002
+LLM call 3/20 today | ~256 in / 20 out tok | est $0.00005 | est day total $0.0002
 ```
 
-### 7.3 Rough cost
+### 7.4 Rough cost
 
-With `gpt-4o-mini`, one decision is about **$0.00006** (≈ 260 input + 30 output
-tokens). Even flat-out at 40 calls/day that is **under $0.10 a month**. With
-*only-on-signal* it is usually a few calls a day — cents per month. Your
+With `gpt-4o-mini`, one decision is about **$0.00006** (≈ 260 input + 20 output
+tokens). Even flat-out at 20 calls/day that is **a few cents a month**. With
+*only-on-signal* + *entries-only* it is usually a handful of calls a day. With
+`gpt-4o` multiply by ~15 and it is still well under a dollar a month. Your
 dashboard limit from step 2 is the real cap.
 
-### 7.4 Choosing a prompt
+### 7.5 Choosing a prompt
 
 `exness_bot/prompts.py` ships five presets. Set the one you want in `config.py`:
 ```python
@@ -586,6 +615,9 @@ backtest before any money is at stake.
 | Log always says `Skipping LLM (...)` | that's the guardrails working — it calls the model only on a rule-side setup, within budget and session. Loosen the `LLM_*` settings in `config.py` if you want more calls (costs more). |
 | `insufficient_quota` / `429` from OpenAI | add credit, or the dashboard spend limit is hit; bot keeps trading rules-only meanwhile |
 | Want $0 / no OpenAI at all | leave `OPENAI_API_KEY = ""` (or set `USE_LLM = False`) — pure rule engine |
+| `OPEN rejected: retcode=10030` (Unsupported filling) | the bot now auto-retries FOK → IOC → RETURN; if it still fails, your account blocks market orders on that symbol |
+| Bot exits with `MAX_TOTAL_LOSS_PCT hit` | equity fell 10% below launch; that's the kill switch. Review what happened before restarting; raise/lower the % in `config.py` |
+| Trade appears in the log but not in `trades.csv` | the order was rejected — a rejection is logged as an error and no longer written as a fake fill |
 | `ModuleNotFoundError: MetaTrader5` on Win 10/11 | you installed 32-bit Python or Python is too new for a wheel; use the 64-bit installer, re-run `install.bat` |
 | Python installer says "not supported on this OS" (Win 7) | you downloaded a version newer than 3.8.10; get Python 3.8.10 |
 
@@ -597,7 +629,8 @@ backtest before any money is at stake.
 - [ ] Walk-forward / out-of-sample check also positive
 - [ ] Ran on demo with `DRY_RUN=True`, decisions look sane in the log
 - [ ] Ran on demo with `DRY_RUN=False` for ≥ 4 weeks → result matches the backtest
-- [ ] `RISK_PER_TRADE_PCT` ≤ 0.5, `DAILY_MAX_LOSS_PCT` ≤ 3, `MAX_LOT` small
+- [ ] `RISK_PER_TRADE_PCT` ≤ 0.25, `DAILY_MAX_LOSS_PCT` ≤ 2, `MAX_LOT` small
+- [ ] `MAX_TOTAL_LOSS_PCT` set to a number you would actually accept losing
 - [ ] Account type has low spread; you understand swap on your instrument
 - [ ] VPS / machine stays on; MT5 terminal set to start with the OS
 - [ ] You can afford to lose the whole account balance

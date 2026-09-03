@@ -15,21 +15,30 @@ def _round_lot(symbol_info, lot):
     return lot
 
 
+def _fallback_lot(symbol_info=None):
+    """FIXED_LOT_FALLBACK, but never above MAX_LOT / the broker max."""
+    lot = config.FIXED_LOT_FALLBACK
+    lot = min(lot, config.MAX_LOT)
+    if symbol_info is not None and symbol_info.volume_max:
+        lot = min(lot, symbol_info.volume_max)
+    return lot
+
+
 def position_size(symbol_info, sl_price_distance):
     """Lot size so that hitting the stop loses ~RISK_PER_TRADE_PCT of balance."""
     acc = mt5_client.account_info()
     if acc is None or sl_price_distance <= 0:
-        return config.FIXED_LOT_FALLBACK
+        return _fallback_lot(symbol_info)
 
     risk_money = acc.balance * (config.RISK_PER_TRADE_PCT / 100.0)
     tick_value = symbol_info.trade_tick_value
     tick_size = symbol_info.trade_tick_size or symbol_info.point
     if not tick_value or not tick_size:
-        return config.FIXED_LOT_FALLBACK
+        return _fallback_lot(symbol_info)
 
     loss_per_lot = (sl_price_distance / tick_size) * tick_value
     if loss_per_lot <= 0:
-        return config.FIXED_LOT_FALLBACK
+        return _fallback_lot(symbol_info)
 
     return _round_lot(symbol_info, risk_money / loss_per_lot)
 

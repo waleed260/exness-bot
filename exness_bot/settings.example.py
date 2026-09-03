@@ -18,10 +18,17 @@ MT5_SERVER = "Exness-MT5Trial"  # e.g. Exness-MT5Trial for demo, Exness-MT5Real 
 #   2. Paste it below, keeping the quotes:  OPENAI_API_KEY = "sk-..."
 #   3. Set a hard spend cap and turn OFF auto-recharge:
 #        https://platform.openai.com/settings/organization/limits
-#   4. Keep OPENAI_MODEL on a cheap model (gpt-4o-mini). Do NOT use gpt-4o / o1 here.
 #
-# How often the model is actually called - and the running cost estimate in
-# logs/bot.log - is controlled by the "LLM cost guardrails" block in
-# exness_bot/config.py (only-on-signal, per-day cap, daily $ limit, caching...).
+# OPENAI_MODEL - pick one:
+#   "gpt-4o-mini"  (default) cheapest, fine for this simple strategy   ~$0.00006 / decision
+#   "gpt-4.1-mini"           a bit sharper, still cheap                ~$0.0002  / decision
+#   "gpt-4o"                 best judgement on messy / borderline setups ~$0.001 / decision
+#   "gpt-4.1"                strongest reasoning of these               ~$0.002  / decision
+# Even "gpt-4o" stays at cents/month because the guardrails in config.py
+# (only-on-signal, entries-only, per-day cap, daily $ limit, caching) keep the
+# number of calls tiny. llm_guard auto-uses the right price for the log estimate.
+#
+# How often the model is called is controlled by the "LLM cost guardrails" block
+# in exness_bot/config.py.
 OPENAI_API_KEY = ""
 OPENAI_MODEL = "gpt-4o-mini"

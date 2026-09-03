@@ -101,8 +101,11 @@ def _handle_candle(symbol_info, guard):
 
     if action == "close" and pos is not None:
         r = executor.close_position(pos, symbol_info)
-        _trade_log([datetime.datetime.utcnow().isoformat(), "close", side, pos.volume,
-                    getattr(r, "price", ""), "", "", decision["reason"]])
+        if config.DRY_RUN or executor.succeeded(r):
+            _trade_log([datetime.datetime.utcnow().isoformat(), "close", side, pos.volume,
+                        getattr(r, "price", ""), "", "", decision["reason"]])
+        else:
+            log.logger.error("Close did not execute - position left open, will retry next candle")
         return
 
     if action in ("buy", "sell"):
@@ -123,9 +126,12 @@ def _handle_candle(symbol_info, guard):
         lot = risk.position_size(symbol_info, abs(entry - sl_price))
         log.logger.info(f"Entering {action} {lot} lots entry~{entry} sl={sl_price:.5f} tp={tp_price:.5f}")
         r = executor.open_position(action, lot, sl_price, tp_price, symbol_info)
-        _trade_log([datetime.datetime.utcnow().isoformat(), "open", action, lot,
-                    getattr(r, "price", entry), round(sl_price, 5), round(tp_price, 5),
-                    decision["reason"]])
+        if config.DRY_RUN or executor.succeeded(r):
+            _trade_log([datetime.datetime.utcnow().isoformat(), "open", action, lot,
+                        getattr(r, "price", entry), round(sl_price, 5), round(tp_price, 5),
+                        decision["reason"]])
+        else:
+            log.logger.error(f"Open did not execute (retcode={getattr(r, 'retcode', 'n/a')}); no position taken")
 
 
 def _log_environment():
@@ -151,6 +157,25 @@ def _log_environment():
         pass
 
 
+def _total_loss_exceeded(launch_equity):
+    """Hard kill switch: stop the bot for good if equity falls too far below the
+    equity we started this run with. Not reset by the day rollover."""
+    limit = getattr(config, "MAX_TOTAL_LOSS_PCT", 0) or 0
+    if limit <= 0 or launch_equity <= 0:
+        return False
+    acc = mt5_client.account_info()
+    if acc is None:
+        return False
+    dd = (launch_equity - acc.equity) / launch_equity * 100.0
+    if dd >= limit:
+        log.logger.error(
+            f"MAX_TOTAL_LOSS_PCT hit: equity down {dd:.2f}% from {launch_equity:.2f} "
+            f"since launch (limit {limit}%). Stopping. Review before restarting."
+        )
+        return True
+    return False
+
+
 def main():
     _log_environment()
     mt5_client.connect()
@@ -158,14 +183,20 @@ def main():
     symbol_info = mt5_client.resolve_symbol()
     guard = risk.DailyGuard()
 
+    _acc = mt5_client.account_info()
+    launch_equity = _acc.equity if _acc else 0.0
+
     log.logger.info(
         f"Bot started. symbol={mt5_client.resolved_symbol()} tf={config.TIMEFRAME} "
-        f"DRY_RUN={config.DRY_RUN} USE_LLM={config.USE_LLM}"
+        f"DRY_RUN={config.DRY_RUN} USE_LLM={config.USE_LLM} launch_equity={launch_equity}"
     )
 
     last_bar_time = None
     try:
         while True:
+            if _total_loss_exceeded(launch_equity):
+                break
+
             _manage_open(symbol_info)
 
             r = mt5_client.rates(mt5_client.resolved_symbol(), config.TIMEFRAME, 2)
