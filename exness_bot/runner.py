@@ -9,6 +9,8 @@ Stop: Ctrl+C
 
 import csv
 import os
+import platform
+import sys
 import time
 import datetime
 
@@ -126,7 +128,31 @@ def _handle_candle(symbol_info, guard):
                     decision["reason"]])
 
 
+def _log_environment():
+    """Print OS / Python info - handy when debugging a first run."""
+    log.logger.info(
+        f"Environment: {platform.system()} {platform.release()} "
+        f"| Python {sys.version.split()[0]} ({platform.architecture()[0]})"
+    )
+    if platform.system() != "Windows":
+        log.logger.warning(
+            "Not running on Windows - the MetaTrader5 package is Windows-only, "
+            "so live/demo trading will not work here (backtesting still does)."
+        )
+        return
+    try:
+        # platform.release() is '7', '10', '11', ... on Windows
+        major = int(str(platform.release()).split(".")[0])
+        if major < 7:
+            log.logger.warning(
+                "This looks older than Windows 7. Supported: Windows 7, 10, 11."
+            )
+    except ValueError:
+        pass
+
+
 def main():
+    _log_environment()
     mt5_client.connect()
     _guard_live()
     symbol_info = mt5_client.resolve_symbol()

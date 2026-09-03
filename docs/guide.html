@@ -44,7 +44,7 @@
 
 <h1>exness_bot — Step-by-Step Guide</h1>
 <p class="lead">LLM + rule-based auto-trading bot for Exness (MetaTrader&nbsp;5)</p>
-<p class="meta">Version 1.1 &nbsp;·&nbsp; Author: Waleed Hassan &nbsp;·&nbsp; Runs on Windows 7, 10 and 11</p>
+<p class="meta">Version 1.2 &nbsp;·&nbsp; Author: Waleed Hassan &nbsp;·&nbsp; Runs on Windows 7, 10 and 11</p>
 
 <div class="warn">
 <strong>Read this first.</strong> Automated FX/CFD trading loses money for most
@@ -55,6 +55,34 @@ Algo trading is allowed by Exness; arbitrage, latency exploitation and quote-del
 tick-scalping are not. Nothing here is financial advice.
 </div>
 
+<h2>Requirements (full list)</h2>
+
+<h3>To backtest only (any OS, no broker needed)</h3>
+<table>
+<tr><th>Need</th><th>Detail</th></tr>
+<tr><td>Operating system</td><td>Windows, macOS or Linux</td></tr>
+<tr><td>Python</td><td>3.8&ndash;3.12, <strong>64-bit</strong> (tick <em>Add Python to PATH</em>)</td></tr>
+<tr><td>Python packages</td><td><code>pandas</code>, <code>numpy</code> &mdash; <code>pip install pandas</code> pulls both</td></tr>
+<tr><td>Data</td><td>one CSV of candles, columns <code>time,open,high,low,close</code></td></tr>
+</table>
+
+<h3>To trade (demo or live)</h3>
+<table>
+<tr><th>Need</th><th>Detail</th></tr>
+<tr><td>Operating system</td><td><strong>Windows 7 SP1 / 10 / 11, 64-bit.</strong> The <code>MetaTrader5</code> package is Windows-only; a Windows VPS also counts.</td></tr>
+<tr><td>Python</td><td><strong>Windows 7 &rarr; Python 3.8.10</strong> (last version that installs on Win 7). <strong>Windows 10 / 11 &rarr; latest Python 3.</strong> 64-bit, <em>Add Python to PATH</em>.</td></tr>
+<tr><td>Python packages</td><td><code>MetaTrader5&gt;=5.0.37</code>, <code>pandas&gt;=1.3.5</code>, <code>numpy&gt;=1.21</code>; plus <code>openai&gt;=1.10,&lt;2</code> only for LLM mode. All installed by <code>pip install -r requirements.txt</code>.</td></tr>
+<tr><td>Broker terminal</td><td><strong>Exness MetaTrader 5</strong> desktop terminal, installed and logged in.</td></tr>
+<tr><td>Exness account</td><td>Start with a <strong>demo</strong> account &mdash; you need its <em>login number</em>, <em>password</em> and <em>server</em> (e.g. <code>Exness-MT5Trial</code>).</td></tr>
+<tr><td>Terminal setting</td><td><strong>Tools &rarr; Options &rarr; Expert Advisors &rarr; Allow algorithmic trading</strong> ticked.</td></tr>
+<tr><td>Network / uptime</td><td>Stable internet; the PC or VPS stays on and the terminal stays open while the bot runs.</td></tr>
+<tr><td>Disk / RAM</td><td>~1&nbsp;GB free disk (Python + MT5), 2&nbsp;GB+ RAM.</td></tr>
+<tr><td>Optional</td><td>An <strong>OpenAI API key</strong> &mdash; only if <code>USE_LLM = True</code> and you want LLM decisions instead of the built-in rules.</td></tr>
+</table>
+<p class="small">Hardware needs are light: the bot polls every few seconds and holds one
+position at a time. Any machine that runs the MT5 terminal comfortably runs the bot.</p>
+
+<div class="section"></div>
 <h2>Part A &mdash; The easy way (no coding needed)</h2>
 <p>If you are not a programmer, follow just this part. You need a
 <strong>Windows PC</strong> (7, 10 or 11), a <strong>free Exness demo account</strong>,
@@ -303,11 +331,11 @@ verdict        : NO EDGE - do not trade this as-is</pre>
 <div class="section"></div>
 <h2>5. Step-by-step: demo on Windows</h2>
 <p>The <code>MetaTrader5</code> Python package only runs on <strong>Windows</strong> (a Windows VPS is fine).</p>
-<p><strong>Python version:</strong> on <strong>Windows 7</strong> use <strong>Python 3.8.10</strong>
-&mdash; it is the last release that installs on Windows 7, and <code>requirements.txt</code>
-is pinned so the right package versions install automatically. On
-<strong>Windows 10 / 11</strong> use the latest Python 3. Either way, tick
-<em>"Add Python to PATH"</em> during install.</p>
+<p><strong>Python version:</strong> on <strong>Windows 7</strong> use
+<strong>Python 3.8.10</strong> &mdash; the last release that installs on Win 7, and
+<code>requirements.txt</code> is set so the right package versions install
+automatically. On <strong>Windows 10 / 11</strong> use the latest Python 3.
+Either way tick <em>"Add Python to PATH"</em> and use the <strong>64-bit</strong> installer.</p>
 <ol>
 <li>Create a <strong>demo</strong> account in the Exness Personal Area; note the login number, password and server (e.g. <code>Exness-MT5Trial</code>).</li>
 <li>Install the <strong>Exness MetaTrader 5</strong> terminal, log into the demo account.</li>
@@ -351,7 +379,68 @@ closes, the bot loses its connection &mdash; open positions keep their broker-si
 SL/TP, but the trailing logic pauses until it reconnects.</p>
 
 <div class="section"></div>
-<h2>7. How good is it for Exness &mdash; honest assessment</h2>
+<h2>7. Run it in VS Code (for developers)</h2>
+<ol class="steps">
+<li><strong>Install VS Code</strong> and the <strong>Python extension</strong> (Microsoft).</li>
+<li><strong>File &rarr; Open Folder&hellip;</strong> and pick the extracted <code>exness-bot</code> folder.</li>
+<li><strong>Terminal &rarr; New Terminal</strong> to get a shell at the project root.</li>
+<li><em>(Recommended)</em> create a virtual environment so packages stay local:
+<pre>python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux (backtest only)</pre>
+Then click the Python version in the status bar (bottom-right) and select the
+<code>.venv</code> interpreter.</li>
+<li>Install packages:
+<pre>pip install -r requirements.txt      # trading  (Windows)
+pip install pandas                   # backtest only (any OS)</pre></li>
+<li>Create the settings file once:
+<pre>copy exness_bot\settings.example.py exness_bot\settings.py    # Windows</pre>
+Open <code>exness_bot/settings.py</code> and fill in the demo login / password / server.</li>
+<li>Run from the VS Code terminal:
+<ul>
+<li>Backtest &mdash; <code>python -m exness_bot.backtest --csv data/EURUSD_M15.csv</code></li>
+<li>Bot (safe DRY-RUN) &mdash; <code>python -m exness_bot.runner</code></li>
+<li>Or open <code>exness_bot/runner.py</code> and press <span class="kbd">F5</span> to run
+under the debugger (set breakpoints in <code>strategy.py</code> / <code>risk.py</code>
+to watch a decision form).</li>
+</ul></li>
+<li>Stop the bot with <span class="kbd">Ctrl</span>+<span class="kbd">C</span> in the terminal.</li>
+</ol>
+<p class="small">Output goes to <code>exness_bot/logs/bot.log</code> and
+<code>exness_bot/logs/trades.csv</code> &mdash; open them in the editor while it runs.</p>
+
+<div class="section"></div>
+<h2>8. Deploy &mdash; keep it running 24/5</h2>
+<p>The bot only works while it is running <strong>and</strong> the Exness MT5 terminal is
+open and logged in. Pick one:</p>
+<p><strong>Option A &mdash; your own PC (simplest).</strong> Keep the PC on with MT5 running
+and <code>run.bat</code> (or <code>python -m exness_bot.runner</code>) going in a window.
+<em>Settings &rarr; Power &amp; sleep &rarr; Sleep = Never</em> so it does not suspend.</p>
+<p><strong>Option B &mdash; a Windows VPS (recommended for real use).</strong></p>
+<ol>
+<li>Rent a small <strong>Windows Server VPS</strong> (~2 vCPU / 4&nbsp;GB RAM is plenty;
+"Forex VPS" plans work well and sit close to the broker).</li>
+<li>Connect with <strong>Remote Desktop</strong> (<code>mstsc</code>).</li>
+<li>On the VPS: install Python (same version rule as Part A / section 5), install the
+<strong>Exness MT5</strong> terminal, log in, tick <em>Allow algorithmic trading</em>.</li>
+<li>Copy the <code>exness-bot</code> folder across, run <code>install.bat</code>, fill in
+<code>settings.py</code>.</li>
+<li>Start it with <code>run.bat</code>. It keeps running after you close the Remote
+Desktop window &mdash; just don't log out of the Windows session.</li>
+<li>Auto-start after a reboot: put a shortcut to <code>run.bat</code> in
+<code>shell:startup</code>, and set the MT5 terminal to start with Windows.</li>
+</ol>
+<p><strong>Keep it alive unattended.</strong> Run the bot under a supervisor that restarts
+it if it exits &mdash; e.g. <strong>NSSM</strong> (<code>nssm install exness-bot</code> &rarr;
+command <code>python -m exness_bot.runner</code>) to register it as a Windows service,
+or Task Scheduler with <em>Restart on failure</em>. Check <code>logs/bot.log</code>
+daily for the first week.</p>
+<div class="warn"><strong>No cloud / Docker option.</strong> <code>MetaTrader5</code> needs a
+real Windows session with the terminal running, so a Linux container cannot trade.
+A Linux box is fine for backtesting only.</div>
+
+<div class="section"></div>
+<h2>9. How good is it for Exness &mdash; honest assessment</h2>
 
 <h3>a) Will it work <em>technically</em> on Exness?</h3>
 <p>Fairly likely after a short debugging pass on demo. Usual first-run snags:</p>
@@ -384,7 +473,7 @@ framework with a <em>backtester</em> attached. The profitable idea has to be you
 has to survive the backtest before any money is at stake.</div>
 
 <div class="section"></div>
-<h2>8. Troubleshooting</h2>
+<h2>10. Troubleshooting</h2>
 <table>
 <tr><th>Symptom</th><th>Cause / fix</th></tr>
 <tr><td><code>settings.py not found</code></td><td>you didn't copy <code>settings.example.py</code> &rarr; <code>settings.py</code></td></tr>
@@ -396,9 +485,11 @@ has to survive the backtest before any money is at stake.</div>
 <tr><td><code>OPEN rejected: retcode=10019</code></td><td>not enough money for that lot; lower <code>RISK_PER_TRADE_PCT</code> or <code>MAX_LOT</code></td></tr>
 <tr><td>No trades ever</td><td>trend filter + session window too strict, or <code>MIN_CONFIDENCE</code> too high; loosen and re-backtest</td></tr>
 <tr><td>LLM errors in the log</td><td>bad/empty <code>OPENAI_API_KEY</code>; the bot auto-falls back to the rule set</td></tr>
+<tr><td><code>ModuleNotFoundError: MetaTrader5</code> on Win 10/11</td><td>you installed 32-bit Python, or Python is too new for a wheel &mdash; use the 64-bit installer and re-run <code>install.bat</code></td></tr>
+<tr><td>Python installer says "not supported on this OS" (Win 7)</td><td>you downloaded a version newer than 3.8.10 &mdash; get Python 3.8.10</td></tr>
 </table>
 
-<h2>9. Safe-launch checklist</h2>
+<h2>11. Safe-launch checklist</h2>
 <ul class="check">
 <li>[ ] Backtested on &ge; 2 years of data, on &ge; 2 symbols &rarr; positive expectancy, PF &gt; 1.15</li>
 <li>[ ] Walk-forward / out-of-sample check also positive</li>

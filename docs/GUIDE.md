@@ -2,7 +2,7 @@
 
 **LLM + rule-based auto-trading bot for Exness (MetaTrader 5)**
 
-Version 1.1 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
+Version 1.2 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 
 ---
 
@@ -16,6 +16,36 @@ Version 1.1 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
   tick-scalping that abuses quote delays are **not** — keep the strategy
   "normal" (minutes-to-hours holding, not millisecond scalping).
 - Nothing in this project is financial advice.
+
+---
+
+## Requirements (full list)
+
+### To backtest only (any OS, no broker needed)
+
+| Need | Detail |
+|------|--------|
+| Operating system | Windows, macOS or Linux |
+| Python | 3.8–3.12, **64-bit** (tick *Add Python to PATH*) |
+| Python packages | `pandas`, `numpy` — `pip install pandas` pulls both |
+| Data | one CSV of candles, columns `time,open,high,low,close` |
+
+### To trade (demo or live)
+
+| Need | Detail |
+|------|--------|
+| Operating system | **Windows 7 SP1 / 10 / 11, 64-bit.** The `MetaTrader5` package is Windows-only; a Windows VPS also counts. |
+| Python | **Windows 7 → Python 3.8.10** (last version that installs on Win 7). **Windows 10 / 11 → latest Python 3.** 64-bit, *Add Python to PATH*. |
+| Python packages | `MetaTrader5>=5.0.37`, `pandas>=1.3.5`, `numpy>=1.21`; plus `openai>=1.10,<2` only for LLM mode. All installed by `pip install -r requirements.txt`. |
+| Broker terminal | **Exness MetaTrader 5** desktop terminal, installed and logged in. |
+| Exness account | Start with a **demo** account — you need its *login number*, *password* and *server* (e.g. `Exness-MT5Trial`). |
+| Terminal setting | **Tools → Options → Expert Advisors → Allow algorithmic trading** ticked. |
+| Network / uptime | Stable internet; the PC or VPS stays on and the terminal stays open while the bot runs. |
+| Disk / RAM | ~1 GB free disk (Python + MT5), 2 GB+ RAM. |
+| Optional | An **OpenAI API key** — only if `USE_LLM = True` and you want LLM decisions instead of the built-in rules. |
+
+Hardware needs are light: the bot polls every few seconds and holds one position
+at a time. Any machine that runs the MT5 terminal comfortably runs the bot.
 
 ---
 
@@ -250,8 +280,8 @@ The `MetaTrader5` Python package only runs on **Windows** (a Windows VPS is fine
 
 **Python version:** on **Windows 7** use **Python 3.8.10** — the last release that
 installs on Win 7; `requirements.txt` is set so compatible package versions
-install automatically. On **Windows 10 / 11** use the latest Python 3. Tick
-*"Add Python to PATH"* during install.
+install automatically. On **Windows 10 / 11** use the latest Python 3. Either way
+tick *"Add Python to PATH"* during install, and use the **64-bit** installer.
 
 1. Create a **demo** account in the Exness Personal Area, note the login number,
    password and server (e.g. `Exness-MT5Trial`).
@@ -310,7 +340,75 @@ the trailing logic stops until it reconnects).
 
 ---
 
-## 7. How good is it for Exness — honest assessment
+## 7. Run it in VS Code (for developers)
+
+1. Install **VS Code** and the **Python extension** (Microsoft).
+2. **File → Open Folder…** and pick the extracted `exness-bot` folder.
+3. **Terminal → New Terminal** to get a shell at the project root.
+4. *(Recommended)* create a virtual environment so packages stay local:
+   ```
+   python -m venv .venv
+   .venv\Scripts\activate          # Windows
+   # source .venv/bin/activate     # macOS / Linux (backtest only)
+   ```
+   Then click the Python version in the status bar (bottom-right) and select the
+   `.venv` interpreter.
+5. Install packages:
+   ```
+   pip install -r requirements.txt      # trading  (Windows)
+   pip install pandas                   # backtest only (any OS)
+   ```
+6. Create the settings file once:
+   ```
+   copy exness_bot\settings.example.py exness_bot\settings.py    # Windows
+   ```
+   Open `exness_bot/settings.py` and fill in the demo login / password / server.
+7. Run from the VS Code terminal:
+   - Backtest — `python -m exness_bot.backtest --csv data/EURUSD_M15.csv`
+   - Bot (safe DRY-RUN) — `python -m exness_bot.runner`
+   - Or open `exness_bot/runner.py` and press **F5** to run under the debugger
+     (set breakpoints in `strategy.py` / `risk.py` to watch a decision form).
+8. Stop the bot with **Ctrl+C** in the terminal.
+
+Output goes to `exness_bot/logs/bot.log` and `exness_bot/logs/trades.csv` — open
+them in the VS Code editor while it runs.
+
+---
+
+## 8. Deploy — keep it running 24/5
+
+The bot only works while it is running **and** the Exness MT5 terminal is open and
+logged in. Pick one:
+
+**Option A — your own PC (simplest).** Keep the PC on with MT5 running and
+`run.bat` (or `python -m exness_bot.runner`) going in a window.
+*Settings → Power & sleep → Sleep = Never* so it does not suspend.
+
+**Option B — a Windows VPS (recommended for real use).**
+1. Rent a small **Windows Server VPS** (~2 vCPU / 4 GB RAM is plenty; "Forex VPS"
+   plans work well and sit close to the broker).
+2. Connect with **Remote Desktop** (`mstsc`).
+3. On the VPS: install Python (same version rule as Part A / section 5), install
+   the **Exness MT5** terminal, log in, tick *Allow algorithmic trading*.
+4. Copy the `exness-bot` folder across, run `install.bat`, fill in `settings.py`.
+5. Start it with `run.bat`. It keeps running after you close the Remote Desktop
+   window — just don't log out of the Windows session.
+6. Auto-start after a reboot: put a shortcut to `run.bat` in `shell:startup`, and
+   set the MT5 terminal to start with Windows.
+
+**Keep it alive unattended.** Run the bot under a supervisor that restarts it if
+it exits — e.g. **NSSM** (`nssm install exness-bot` → command
+`python -m exness_bot.runner`) to register it as a Windows service, or Task
+Scheduler with *Restart on failure*. Check `logs/bot.log` daily for the first
+week.
+
+**No cloud / Docker option.** `MetaTrader5` needs a real Windows session with the
+terminal running, so a Linux container cannot trade. A Linux box is fine for
+backtesting only.
+
+---
+
+## 9. How good is it for Exness — honest assessment
 
 **Two different questions:**
 
@@ -346,7 +444,7 @@ backtest before any money is at stake.
 
 ---
 
-## 8. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -359,10 +457,12 @@ backtest before any money is at stake.
 | `OPEN rejected: retcode=10019` | not enough money for that lot; lower `RISK_PER_TRADE_PCT` or `MAX_LOT` |
 | No trades ever | trend filter + session window too strict, or `MIN_CONFIDENCE` too high; loosen and re-backtest |
 | LLM errors in the log | bad/empty `OPENAI_API_KEY`; the bot auto-falls back to the rule set |
+| `ModuleNotFoundError: MetaTrader5` on Win 10/11 | you installed 32-bit Python or Python is too new for a wheel; use the 64-bit installer, re-run `install.bat` |
+| Python installer says "not supported on this OS" (Win 7) | you downloaded a version newer than 3.8.10; get Python 3.8.10 |
 
 ---
 
-## 9. Safe-launch checklist
+## 11. Safe-launch checklist
 
 - [ ] Backtested on ≥ 2 years of data, on ≥ 2 symbols → positive expectancy, PF > 1.15
 - [ ] Walk-forward / out-of-sample check also positive

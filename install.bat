@@ -58,6 +58,7 @@ exit /b 1
 :PIPFAIL
 echo.
 echo [ERROR] Package installation failed - read the messages above.
-echo   Common cause on Windows 7: Python newer than 3.8 (won't work).
+echo   Common cause on Windows 7: Python newer than 3.8 (won't install).
+echo   Fix: uninstall it, install Python 3.8.10, run this again.
 pause
 exit /b 1
