@@ -1,0 +1,13 @@
+# secrets / local config
+exness_bot/settings.py
+settings.py
+.env
+
+# logs
+exness_bot/logs/
+log/*.txt
+
+# python
+__pycache__/
+*.pyc
+.idea/
