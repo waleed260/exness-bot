@@ -18,6 +18,20 @@ an edge before risking anything.
 > before considering real funds. Algo trading is allowed by Exness;
 > arbitrage / latency / tick-scalping style exploits are not — keep it "normal".
 
+## Current safety status
+
+The bot is prepared for automated simulation and demo testing, but **live
+automatic trading is disabled**. The default execution mode is `simulation` and
+`DRY_RUN=True`; the live path refuses to run unless `LIVE_TRADING_ENABLED` is
+explicitly changed in a separately reviewed release. See
+[the implementation plan](AUTOMATED_SYSTEM_PLAN.md) for the development scope.
+
+The system now includes fail-closed order validation, an emergency stop file
+(`exness_bot/STOP_TRADING`), daily trade limits, consecutive-loss protection,
+margin/spread/stale-signal checks, a persistent local simulator, and restart
+reconciliation tests. These controls reduce avoidable execution risk; they do
+not eliminate market losses or guarantee profitability.
+
 ## What it does
 
 | Area | Detail |

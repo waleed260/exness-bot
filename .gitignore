@@ -17,3 +17,7 @@ __pycache__/
 .idea/
 .venv/
 btvenv/
+
+# emergency/runtime control state
+exness_bot/STOP_TRADING
+exness_bot/logs/simulation_state.json

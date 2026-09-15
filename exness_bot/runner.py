@@ -23,6 +23,7 @@ from exness_bot import data as data_mod
 from exness_bot import strategy
 from exness_bot import risk
 from exness_bot import executor
+from exness_bot import safety
 
 
 def _position(symbol_info=None):
@@ -73,6 +74,9 @@ def _manage_open(symbol_info):
 
 
 def _entry_allowed(snap, symbol_info, guard):
+    if safety.emergency_stop_active():
+        log.logger.critical("Emergency stop is active; no new entries")
+        return False
     if not risk.within_session():
         log.logger.info("Outside trading session, no new entries")
         return False
@@ -90,7 +94,7 @@ def _entry_allowed(snap, symbol_info, guard):
     return True
 
 
-def _handle_candle(symbol_info, guard):
+def _handle_candle(symbol_info, guard, safety_state):
     df = data_mod.load_frame()
     snap = data_mod.snapshot(df)
     side, pos = _position(symbol_info)
@@ -124,9 +128,23 @@ def _handle_candle(symbol_info, guard):
         entry = t.ask if action == "buy" else t.bid
         sl_price, tp_price = risk.sl_tp(action, entry, atr, symbol_info)
         lot = risk.position_size(symbol_info, abs(entry - sl_price))
+        acc = mt5_client.account_info()
+        free_margin_pct = None
+        if acc is not None and getattr(acc, "equity", 0):
+            free_margin_pct = getattr(acc, "margin_free", acc.equity) / acc.equity * 100.0
+        valid, reason = safety.validate_order(
+            side=action, volume=lot, price=entry, sl=sl_price, tp=tp_price,
+            spread_points=mt5_client.spread_points(), free_margin_pct=free_margin_pct,
+            state=safety_state, existing_positions=len(mt5_client.positions()),
+            account_exposure_pct=config.RISK_PER_TRADE_PCT,
+        )
+        if not valid:
+            log.logger.warning(f"Rejected {action} entry: {reason}")
+            return
         log.logger.info(f"Entering {action} {lot} lots entry~{entry} sl={sl_price:.5f} tp={tp_price:.5f}")
         r = executor.open_position(action, lot, sl_price, tp_price, symbol_info)
         if config.DRY_RUN or executor.succeeded(r):
+            safety_state.record_open(config.RISK_PER_TRADE_PCT)
             _trade_log([datetime.datetime.utcnow().isoformat(), "open", action, lot,
                         getattr(r, "price", entry), round(sl_price, 5), round(tp_price, 5),
                         decision["reason"]])
@@ -182,13 +200,16 @@ def main():
     _guard_live()
     symbol_info = mt5_client.resolve_symbol()
     guard = risk.DailyGuard()
+    safety_state = safety.SafetyState()
 
     _acc = mt5_client.account_info()
     launch_equity = _acc.equity if _acc else 0.0
 
     log.logger.info(
         f"Bot started. symbol={mt5_client.resolved_symbol()} tf={config.TIMEFRAME} "
-        f"DRY_RUN={config.DRY_RUN} USE_LLM={config.USE_LLM} launch_equity={launch_equity}"
+        f"mode={config.EXECUTION_MODE} DRY_RUN={config.DRY_RUN} "
+        f"LIVE_TRADING_ENABLED={config.LIVE_TRADING_ENABLED} USE_LLM={config.USE_LLM} "
+        f"launch_equity={launch_equity}"
     )
 
     last_bar_time = None
@@ -205,7 +226,7 @@ def main():
                 if closed_bar_time != last_bar_time:
                     last_bar_time = closed_bar_time
                     try:
-                        _handle_candle(symbol_info, guard)
+                        _handle_candle(symbol_info, guard, safety_state)
                     except Exception as e:
                         log.logger.exception(f"Error handling candle: {e}")
             time.sleep(config.POLL_SECONDS)

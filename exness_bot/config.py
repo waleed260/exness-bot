@@ -15,6 +15,15 @@ except Exception:  # MetaTrader5 only installs on Windows; allow import elsewher
 DRY_RUN = True            # True = never send a real order, only log the intent
 DEMO_ONLY = True          # refuse to run if the connected account is a real/live account
 CONFIRM_LIVE_STRING = ""  # to trade live, set DEMO_ONLY=False AND set this to "I ACCEPT THE RISK"
+EXECUTION_MODE = "simulation"  # simulation | demo | live; simulation is the safe default
+LIVE_TRADING_ENABLED = False    # remains False until a separately reviewed release
+EMERGENCY_STOP_FILE = "exness_bot/STOP_TRADING"
+MAX_TRADES_PER_DAY = 10
+MAX_CONSECUTIVE_LOSSES = 3
+MAX_ACCOUNT_EXPOSURE_PCT = 2.0
+MIN_FREE_MARGIN_PCT = 100.0
+MAX_SIGNAL_AGE_SECONDS = 900
+MAX_SLIPPAGE_POINTS = 20
 
 # ---------------- Market ----------------
 SYMBOL = "EURUSD"         # base name; broker suffix (m, ., z ...) is auto-resolved

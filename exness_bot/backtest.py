@@ -101,7 +101,14 @@ def run(df, point):
 
             pnl_price = (exit_price - pos["entry"]) if pos["side"] == "buy" else (pos["entry"] - exit_price)
             pnl_price -= spread_cost
-            r = pnl_price / pos["risk"]
+            # Commission is converted to R using the configured fixed-fractional
+            # risk amount. This keeps the report conservative without pretending
+            # that one lot has the same cash value for every symbol.
+            risk_money = config.BT_START_BALANCE * (config.RISK_PER_TRADE_PCT / 100.0)
+            commission_r = 0.0
+            if config.BT_COMMISSION_PER_LOT and risk_money > 0:
+                commission_r = config.BT_COMMISSION_PER_LOT * pos["volume"] / risk_money
+            r = pnl_price / pos["risk"] - commission_r
             trades.append({"entry_time": df.iloc[pos["entry_i"]]["time"], "exit_time": nxt["time"],
                            "side": pos["side"], "entry": pos["entry"], "exit": exit_price, "r": r})
             pos = None
@@ -116,14 +123,16 @@ def run(df, point):
             if not atr or math.isnan(atr):
                 continue
             side = decision["action"]
-            entry = nxt["open"] + (spread_cost / 2 if side == "buy" else -spread_cost / 2)
+            # Keep the historical fill at the bar open and charge the configured
+            # round-trip spread exactly once at exit accounting.
+            entry = nxt["open"]
             risk_dist = config.SL_ATR_MULT * atr
             if side == "buy":
                 sl, tp = entry - risk_dist, entry + config.TP_ATR_MULT * atr
             else:
                 sl, tp = entry + risk_dist, entry - config.TP_ATR_MULT * atr
             pos = {"side": side, "entry": entry, "sl": sl, "tp": tp,
-                   "risk": risk_dist, "atr": atr, "entry_i": i + 1}
+                   "risk": risk_dist, "atr": atr, "volume": 1.0, "entry_i": i + 1}
 
     return _report(trades, df)
 

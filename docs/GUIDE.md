@@ -111,6 +111,16 @@ The rest of this document (Parts 1–12) is the detailed reference.
 
 ## 1. What the bot does
 
+The safe development default is local **simulation**: the bot can validate a
+signal, create a test position, apply SL/TP, close the position, persist state,
+and recover it after restart without sending an external order. `DRY_RUN=True`
+remains enabled. Demo execution requires an explicit configuration choice, and
+live execution is disabled by `LIVE_TRADING_ENABLED=False`.
+
+A global emergency stop is activated by creating the file
+`exness_bot/STOP_TRADING`. While that file exists, no new entry is accepted.
+Remove it only after reviewing the logs and deliberately re-enabling operation.
+
 Once per **closed candle** (default timeframe M15) it runs this pipeline:
 
 ```
@@ -176,6 +186,13 @@ to `exness_bot/logs/trades.csv`.
 |---|---|---|
 | `DRY_RUN` | `True` | `True` = never send a real order, only log what it would do |
 | `DEMO_ONLY` | `True` | refuse to start if the connected account is a live account |
+| `EXECUTION_MODE` | `"simulation"` | `simulation`, `demo`, or `live`; simulation is the default |
+| `LIVE_TRADING_ENABLED` | `False` | hard gate; live execution remains disabled during development |
+| `EMERGENCY_STOP_FILE` | `exness_bot/STOP_TRADING` | presence blocks all new entries |
+| `MAX_TRADES_PER_DAY` | `10` | maximum accepted entries per UTC day |
+| `MAX_CONSECUTIVE_LOSSES` | `3` | blocks new entries after this many consecutive losses |
+| `MIN_FREE_MARGIN_PCT` | `100` | rejects entries when free margin is below this percentage of equity |
+| `MAX_SIGNAL_AGE_SECONDS` | `900` | rejects stale or future-dated signals |
 | `CONFIRM_LIVE_STRING` | `""` | must equal `"I ACCEPT THE RISK"` to run on a live account |
 
 ### Market

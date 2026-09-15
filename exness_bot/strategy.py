@@ -12,6 +12,7 @@ The public entry point is `decide(snapshot, position_side)` which returns:
 """
 
 import json
+import math
 
 from exness_bot.logger import log
 from exness_bot import config
@@ -30,6 +31,13 @@ VALID_ACTIONS = {"buy", "sell", "close", "hold"}
 # rule-based
 # --------------------------------------------------------------------------- #
 def rule_based(snap, position_side):
+    required = ("sma_fast_prev", "sma_slow_prev", "sma_fast", "sma_slow", "rsi", "atr")
+    try:
+        if any(not math.isfinite(float(snap[key])) for key in required):
+            return {"action": "hold", "confidence": 0.0, "reason": "invalid or incomplete market data"}
+    except (KeyError, TypeError, ValueError):
+        return {"action": "hold", "confidence": 0.0, "reason": "invalid or incomplete market data"}
+
     crossed_up = (
         snap["sma_fast_prev"] <= snap["sma_slow_prev"]
         and snap["sma_fast"] > snap["sma_slow"]

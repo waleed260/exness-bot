@@ -38,11 +38,17 @@ def _filling_modes(symbol_info):
 
 def _send_with_retry(build_request, tag, symbol_info=None):
     """build_request(filling) -> dict, re-called each attempt so price is refreshed."""
+    if config.EXECUTION_MODE == "live" and not config.LIVE_TRADING_ENABLED:
+        log.logger.critical("LIVE execution requested but LIVE_TRADING_ENABLED is False")
+        return None
+    if config.EXECUTION_MODE not in {"simulation", "demo", "live"}:
+        log.logger.error(f"Unknown execution mode: {config.EXECUTION_MODE}")
+        return None
     fillings = _filling_modes(symbol_info) if symbol_info is not None else [None]
     fi = 0
     for attempt in range(1, config.ORDER_RETRIES + 1):
         request = build_request(fillings[fi])
-        if config.DRY_RUN:
+        if config.DRY_RUN or config.EXECUTION_MODE == "simulation":
             log.logger.info(f"[DRY_RUN] would {tag}: {request}")
             return None
         result = mt5.order_send(request)
