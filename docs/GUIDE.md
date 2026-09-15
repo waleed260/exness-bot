@@ -1,6 +1,6 @@
 # exness_bot — Step-by-Step Guide
 
-**LLM + rule-based auto-trading bot for Exness (MetaTrader 5)**
+**Rule-based auto-trading bot for Exness (MetaTrader 5)**
 
 Version 1.2 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 
@@ -39,13 +39,12 @@ Version 1.2 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 |------|--------|
 | Operating system | **Windows 7 SP1 / 10 / 11, 64-bit.** The `MetaTrader5` package is Windows-only; a Windows VPS also counts. |
 | Python | **Windows 7 → Python 3.8.10** (last version that installs on Win 7). **Windows 10 / 11 → latest Python 3.** 64-bit, *Add Python to PATH*. |
-| Python packages | `MetaTrader5>=5.0.37`, `pandas>=1.3.5`, `numpy>=1.21`; plus `openai>=1.10,<2` only for LLM mode. All installed by `pip install -r requirements.txt`. |
+| Python packages | `MetaTrader5>=5.0.37`, `pandas>=1.3.5`, and `numpy>=1.21`, installed by `pip install -r requirements.txt`. |
 | Broker terminal | **Exness MetaTrader 5** desktop terminal, installed and logged in. |
 | Exness account | Start with a **demo** account — you need its *login number*, *password* and *server* (e.g. `Exness-MT5Trial`). |
 | Terminal setting | **Tools → Options → Expert Advisors → Allow algorithmic trading** ticked. |
 | Network / uptime | Stable internet; the PC or VPS stays on and the terminal stays open while the bot runs. |
 | Disk / RAM | ~1 GB free disk (Python + MT5), 2 GB+ RAM. |
-| Optional | An **OpenAI API key** — only if `USE_LLM = True` and you want LLM decisions instead of the built-in rules. |
 
 Hardware needs are light: the bot polls every few seconds and holds one position
 at a time. Any machine that runs the MT5 terminal comfortably runs the bot.
@@ -157,8 +156,7 @@ MT5 price history
 indicators   ── SMA(20), SMA(50), RSI(14), ATR(14), 200-SMA trend
       │
       ▼
-strategy     ── LLM decision (OpenAI)  ── falls back to ──▶ rule set
-      │                                    (SMA crossover + RSI + trend)
+strategy     ── deterministic rule set (SMA crossover + RSI + trend)
       ▼
 decision     ── buy / sell / close / hold  (+ confidence 0..1)
       │
@@ -191,13 +189,11 @@ to `exness_bot/logs/trades.csv`.
 | File | Job |
 |------|-----|
 | `exness_bot/config.py` | all settings. `DRY_RUN=True`, `DEMO_ONLY=True` by default |
-| `exness_bot/settings.example.py` | copy to `settings.py`; holds MT5 login + optional OpenAI key (git-ignored) |
+| `exness_bot/settings.example.py` | copy to `settings.py`; holds MT5 login settings (git-ignored) |
 | `exness_bot/mt5_client.py` | connect, account info, positions, candles; auto-resolves the broker symbol suffix; reports spread |
 | `exness_bot/indicators.py` | indicator maths + trailing-stop + session logic. No MT5 import, so it also runs inside the backtester |
 | `exness_bot/data.py` | pulls live candles, returns a DataFrame with indicator columns, drops the still-forming candle |
-| `exness_bot/strategy.py` | picks a prompt, applies the cost guardrails, calls the LLM, validates the JSON; rule-based fallback |
-| `exness_bot/prompts.py` | five named LLM prompt presets; `config.LLM_PROMPT_NAME` chooses one |
-| `exness_bot/llm_guard.py` | keeps OpenAI spend low: only-on-signal, per-day cap, daily $ limit, min gap, snapshot cache, spend estimate |
+| `exness_bot/strategy.py` | deterministic SMA crossover + RSI + trend strategy |
 | `exness_bot/risk.py` | lot sizing, SL/TP levels, break-even + trailing stop, daily-loss guard, session check |
 | `exness_bot/executor.py` | `mt5.order_send` for open / close / modify-stop, with retries; obeys `DRY_RUN` |
 | `exness_bot/runner.py` | the main loop that ties it together |
@@ -233,7 +229,7 @@ to `exness_bot/logs/trades.csv`.
 |---|---|---|
 | `SYMBOL` | `EURUSD` | base name; broker suffix (`m`, `.`, `z` …) is found automatically |
 | `TIMEFRAME` | `M15` | candle used for decisions |
-| `LOOKBACK_BARS` | `400` | how many candles are pulled for indicators / LLM context |
+| `LOOKBACK_BARS` | `400` | how many candles are pulled for indicator warmup and strategy context |
 
 ### Risk
 Defaults are deliberately conservative. They cap the damage of a bad run — they
@@ -282,27 +278,8 @@ do **not** guarantee a profit.
 ### Strategy
 | Setting | Default | Meaning |
 |---|---|---|
-| `USE_LLM` | `True` | use the LLM if an API key is set, else the rule set |
 | `SMA_FAST` / `SMA_SLOW` | `20` / `50` | crossover SMAs |
 | `RSI_PERIOD` | `14` | RSI length |
-
-### LLM cost guardrails
-Only apply when `USE_LLM=True` **and** `settings.OPENAI_API_KEY` is set. Full
-walkthrough in Part 7.
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `LLM_PROMPT_NAME` | `"conservative"` | which preset from `prompts.py`: `conservative` / `trend_follow` / `mean_reversion` / `breakout` / `swing` |
-| `LLM_ONLY_ON_SIGNAL` | `True` | call the model **only** when the rule engine already sees a buy/sell/close setup — the biggest cost saver |
-| `LLM_ENTRIES_ONLY` | `True` | never spend a call on an exit — the rules + SL/TP + trailing stop close positions; only entries go to the model |
-| `LLM_MIN_SECONDS_BETWEEN_CALLS` | `300` | hard floor on call frequency, regardless of timeframe |
-| `LLM_MAX_CALLS_PER_DAY` | `20` | hard cap per UTC day; `0` = unlimited |
-| `LLM_DAILY_COST_LIMIT_USD` | `0.15` | stop calling once the day's *estimated* spend hits this; `0` = off |
-| `LLM_SKIP_OUTSIDE_SESSION` | `True` | no calls outside `SESSION_UTC_HOURS` / `TRADE_DAYS` |
-| `LLM_CACHE_SNAPSHOT` | `True` | reuse the last decision when the snapshot barely moved (no call) |
-| `LLM_SEND_PRICE_HISTORY` | `False` | include `last_10_closes` in the prompt (more tokens; rarely worth it) |
-| `LLM_MAX_OUTPUT_TOKENS` | `40` | reply is a tiny JSON object; capped low |
-| `LLM_COST_PER_1K_INPUT` / `_OUTPUT` | `0.00015` / `0.0006` | fallback price for the log estimate; a known `OPENAI_MODEL` uses its own price automatically |
 
 ### Backtest
 | Setting | Default | Meaning |
@@ -432,8 +409,6 @@ tick *"Add Python to PATH"* during install, and use the **64-bit** installer.
    MT5_LOGIN    = 12345678
    MT5_PASSWORD = "your-demo-password"
    MT5_SERVER   = "Exness-MT5Trial"
-   OPENAI_API_KEY = ""          # leave empty to use the rule-based strategy
-   OPENAI_MODEL   = "gpt-4o-mini"
    ```
    (`settings.py` is git-ignored — credentials never get committed.)
 6. First run in safe simulation/dry-run mode:
@@ -465,105 +440,7 @@ no live account is needed for the local simulation command.
 
 ---
 
-## 7. LLM mode & keeping the OpenAI bill tiny
-
-The bot runs fully **without** OpenAI — the rule engine is the default and costs
-**$0**. LLM mode adds a second opinion: on a *potential* trade it asks a model
-for a `buy / sell / close / hold` JSON decision, and still falls back to the rule
-result if anything goes wrong.
-
-### 7.1 Add your API key (do it in VS Code)
-
-1. Create a key at `platform.openai.com/api-keys`.
-2. **Set a hard monthly spend limit and turn auto-recharge OFF** at
-   `platform.openai.com/settings/organization/limits` (e.g. $5). This is the
-   ceiling that actually protects you.
-3. In VS Code open **`exness_bot/settings.py`** (the file you made from
-   `settings.example.py` in Part 5 / Part 8) and paste the key:
-   ```python
-   OPENAI_API_KEY = "sk-...your key..."
-   OPENAI_MODEL   = "gpt-4o-mini"
-   ```
-   Save. `settings.py` is git-ignored, so the key is never committed.
-4. In `exness_bot/config.py` keep `USE_LLM = True`. The guardrails below are
-   already switched on.
-
-### 7.2 Which model handles trades best?
-
-`gpt-4o-mini` is the default and is fine for this simple SMA/RSI strategy. If you
-want stronger judgement on messy / borderline setups, set a bigger model in
-`settings.py` — the guardrails keep even the big ones at cents per month.
-
-| `OPENAI_MODEL` | When to use it | ~cost / decision |
-|---|---|---|
-| `gpt-4o-mini` *(default)* | simple strategy, tightest budget | ~$0.00006 |
-| `gpt-4.1-mini` | a bit sharper, still very cheap | ~$0.0002 |
-| `gpt-4o` | best at reading unclear / conflicting setups | ~$0.001 |
-| `gpt-4.1` | strongest reasoning of the four | ~$0.002 |
-
-`llm_guard.py` knows these prices, so the spend line in the log stays accurate
-whichever you pick. A newer model id also works — the log just falls back to the
-`LLM_COST_PER_1K_*` estimate for it.
-
-### 7.3 What keeps the cost down
-
-Every guardrail lives in the **`LLM cost guardrails`** block of `config.py`
-(table in Part 3). In plain terms:
-
-- **Only on a signal.** `LLM_ONLY_ON_SIGNAL=True` means the model is called
-  *only* when the free rule engine already sees a setup. On a quiet candle the
-  bot spends nothing. This alone removes ~90% of calls.
-- **Entries only.** `LLM_ENTRIES_ONLY=True` — the model is never asked about
-  closing a trade; the rules, the broker SL/TP and the trailing stop handle
-  exits. Roughly halves what is left.
-- **A hard daily budget.** `LLM_MAX_CALLS_PER_DAY=20` and
-  `LLM_DAILY_COST_LIMIT_USD=0.15` — whichever is hit first, the bot goes
-  rules-only for the rest of the UTC day.
-- **A minimum gap.** `LLM_MIN_SECONDS_BETWEEN_CALLS=300` — never more than one
-  call per 5 minutes, whatever the timeframe.
-- **Session-aware.** `LLM_SKIP_OUTSIDE_SESSION=True` — no calls at night / on
-  weekends.
-- **Caching.** `LLM_CACHE_SNAPSHOT=True` — if the market barely moved since the
-  last call, the previous answer is reused with no new call.
-- **Small prompts.** A compact one-line snapshot, `last_10_closes` left out
-  (`LLM_SEND_PRICE_HISTORY=False`), reply capped at `LLM_MAX_OUTPUT_TOKENS=40`,
-  and `response_format=json_object` so a reply is never wasted.
-
-`logs/bot.log` prints a live estimate on every call:
-```
-LLM call 3/20 today | ~256 in / 20 out tok | est $0.00005 | est day total $0.0002
-```
-
-### 7.4 Rough cost
-
-With `gpt-4o-mini`, one decision is about **$0.00006** (≈ 260 input + 20 output
-tokens). Even flat-out at 20 calls/day that is **a few cents a month**. With
-*only-on-signal* + *entries-only* it is usually a handful of calls a day. With
-`gpt-4o` multiply by ~15 and it is still well under a dollar a month. Your
-dashboard limit from step 2 is the real cap.
-
-### 7.5 Choosing a prompt
-
-`exness_bot/prompts.py` ships five presets. Set the one you want in `config.py`:
-```python
-LLM_PROMPT_NAME = "conservative"
-```
-
-| Name | Style |
-|---|---|
-| `conservative` *(default)* | trend-aligned, textbook setups only, holds when unsure |
-| `trend_follow` | rides the 200-SMA trend, lets winners run |
-| `mean_reversion` | fades RSI extremes back toward the slow SMA |
-| `breakout` | momentum breakouts on expanding ATR, in the trend direction |
-| `swing` | rare, high-confluence entries; expects long holds |
-
-To write your own: add another template to `PRESETS` in `prompts.py` (keep the
-`+ _CONTRACT` on the end so the JSON reply still parses), then point
-`LLM_PROMPT_NAME` at it.
-
----
-
-## 8. Run it in VS Code (for developers)
+## 7. Run it in VS Code (for developers)
 
 1. Install **VS Code** and the **Python extension** (Microsoft).
 2. **File → Open Folder…** and pick the extracted `exness-bot` folder.
@@ -586,8 +463,6 @@ To write your own: add another template to `PRESETS` in `prompts.py` (keep the
    copy exness_bot\settings.example.py exness_bot\settings.py    # Windows
    ```
    Open `exness_bot/settings.py` and fill in the demo login / password / server.
-   For LLM mode, paste `OPENAI_API_KEY` here too — see **Part 7**. Cost knobs and
-   the prompt preset live in `exness_bot/config.py` (`LLM cost guardrails`).
 7. Run from the VS Code terminal:
    - Backtest — `python -m exness_bot.backtest --csv data/EURUSD_M15.csv`
    - Bot (safe DRY-RUN) — `python -m exness_bot.runner`
@@ -600,7 +475,7 @@ them in the VS Code editor while it runs.
 
 ---
 
-## 9. Deploy — where to run it and how (easy way)
+## 8. Deploy — where to run it and how (easy way)
 
 **What "deploy" means here:** the bot has to stay running, and the **Exness MT5
 terminal has to stay open and logged in** next to it. There is no website to
@@ -661,7 +536,7 @@ Check `logs/bot.log` every day for the first week.
 
 ---
 
-## 10. How good is it for Exness — honest assessment
+## 9. How good is it for Exness — honest assessment
 
 **Two different questions:**
 
@@ -677,8 +552,7 @@ Fairly likely after a short debugging pass on demo. The usual first-run snags:
 Rough chance of getting a clean demo run within a day or two: **~85%**.
 
 ### b) Will it make real profit?
-The built-in strategy (SMA crossover + RSI + trend filter, or a generic LLM
-prompt) is a **baseline, not an edge**. After spread, swap and commission its
+The built-in strategy (SMA crossover + RSI + trend filter) is a **baseline, not an edge**. After spread, swap and commission its
 expected value is around zero-to-negative. Realistic odds that this exact
 configuration is net-profitable over a year: **~10–15%**, in line with retail
 algo-trading outcomes generally.
@@ -697,7 +571,7 @@ backtest before any money is at stake.
 
 ---
 
-## 11. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -709,10 +583,6 @@ backtest before any money is at stake.
 | `OPEN rejected: retcode=10016` | invalid stops — broker min distance; raise `SL_ATR_MULT` or use a higher timeframe |
 | `OPEN rejected: retcode=10019` | not enough money for that lot; lower `RISK_PER_TRADE_PCT` or `MAX_LOT` |
 | No trades ever | trend filter + session window too strict, or `MIN_CONFIDENCE` too high; loosen and re-backtest |
-| LLM errors in the log | bad/empty `OPENAI_API_KEY`; the bot auto-falls back to the rule set |
-| Log always says `Skipping LLM (...)` | that's the guardrails working — it calls the model only on a rule-side setup, within budget and session. Loosen the `LLM_*` settings in `config.py` if you want more calls (costs more). |
-| `insufficient_quota` / `429` from OpenAI | add credit, or the dashboard spend limit is hit; bot keeps trading rules-only meanwhile |
-| Want $0 / no OpenAI at all | leave `OPENAI_API_KEY = ""` (or set `USE_LLM = False`) — pure rule engine |
 | `OPEN rejected: retcode=10030` (Unsupported filling) | the bot now auto-retries FOK → IOC → RETURN; if it still fails, your account blocks market orders on that symbol |
 | Bot exits with `MAX_TOTAL_LOSS_PCT hit` | equity fell 10% below launch; that's the kill switch. Review what happened before restarting; raise/lower the % in `config.py` |
 | Trade appears in the log but not in `trades.csv` | the order was rejected — a rejection is logged as an error and no longer written as a fake fill |
@@ -721,7 +591,7 @@ backtest before any money is at stake.
 
 ---
 
-## 12. Safe-launch checklist
+## 11. Safe-launch checklist
 
 - [ ] Backtested on ≥ 2 years of data, on ≥ 2 symbols → positive expectancy, PF > 1.15
 - [ ] Walk-forward / out-of-sample check also positive

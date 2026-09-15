@@ -253,7 +253,7 @@ def main():
     log.logger.info(
         f"Bot started. symbol={mt5_client.resolved_symbol()} tf={config.TIMEFRAME} "
         f"mode={config.EXECUTION_MODE} DRY_RUN={config.DRY_RUN} "
-        f"LIVE_TRADING_ENABLED={config.LIVE_TRADING_ENABLED} USE_LLM={config.USE_LLM} "
+        f"LIVE_TRADING_ENABLED={config.LIVE_TRADING_ENABLED} "
         f"launch_equity={launch_equity}"
     )
 

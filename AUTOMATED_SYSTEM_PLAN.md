@@ -14,17 +14,16 @@ documentation around it.
 - Simulation is the default execution mode for local development.
 - Live mode is rejected unless it is explicitly enabled in code and configuration;
   this task will not enable it.
-- No live credentials, API keys, or account access are required for tests.
+- No live credentials or account access are required for tests.
 - Unsafe, stale, invalid, duplicate, or emergency-stopped trades become
   `NO-TRADE` and are logged with a reason.
 
 ## Existing architecture understood
 
 `runner.py` polls MT5, `data.py` builds closed-candle data, `indicators.py`
-calculates SMA/RSI/ATR/trend values, `strategy.py` produces buy/sell/close/hold,
+calculates SMA/RSI/ATR/trend values, `strategy.py` produces deterministic buy/sell/close/hold decisions,
 `risk.py` sizes trades and manages stops, `executor.py` sends MT5 requests, and
-`backtest.py` evaluates the rule strategy on historical candles. The LLM is an
-optional signal reviewer guarded by `llm_guard.py`.
+`backtest.py` evaluates the rule strategy on historical candles. No external AI or LLM is used; all signals come from the deterministic rule strategy.
 
 ## Implementation phases
 

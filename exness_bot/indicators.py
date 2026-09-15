@@ -80,7 +80,7 @@ def session_ok(ts):
 
 
 def snapshot(df):
-    """Compact dict of the latest closed bar for the strategy / LLM."""
+    """Compact dict of the latest closed bar for the strategy."""
     last = df.iloc[-1]
     prev = df.iloc[-2]
     return {

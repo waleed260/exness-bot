@@ -1,8 +1,8 @@
-# exness_bot — LLM + rule-based auto-trading bot for Exness (MetaTrader 5)
+# exness_bot — rule-based auto-trading bot for Exness (MetaTrader 5)
 
 A small, safe-by-default trading bot for an **Exness MT5** account. On every
-closed candle it builds a market snapshot, asks either an LLM or a built-in
-rule set for a `buy / sell / close / hold` decision, sizes the trade by risk,
+closed candle it builds a market snapshot and applies its deterministic SMA/RSI/
+trend rule set for a `buy / sell / close / hold` decision, sizes the trade by risk,
 attaches an ATR stop/target, and manages the position with a break-even + ATR
 trailing stop.
 
@@ -77,7 +77,7 @@ review the logs and stop the process if behavior is unexpected.
 
 | Area | Detail |
 |------|--------|
-| **Entry** | SMA(fast/slow) crossover, filtered by RSI and a 200-SMA trend filter; or an LLM decision (OpenAI) with the rule set as fallback |
+| **Entry** | SMA(fast/slow) crossover filtered by RSI and a 200-SMA trend filter |
 | **Sizing** | lot chosen so a stop-out loses ~`RISK_PER_TRADE_PCT` of balance |
 | **Stop / target** | `SL = SL_ATR_MULT × ATR`, `TP = TP_ATR_MULT × ATR`, clamped to the broker minimum |
 | **Position management** | move stop to break-even at +1R, then ATR-trail from +1.5R |
@@ -91,13 +91,11 @@ review the logs and stop the process if behavior is unexpected.
 ```
 exness_bot/
   config.py            all settings (DRY_RUN=True, DEMO_ONLY=True by default)
-  settings.example.py  copy to settings.py -> MT5 login + optional OpenAI key
+  settings.example.py  copy to settings.py -> MT5 login settings
   mt5_client.py        connect / account / positions / rates / symbol resolve
   indicators.py        indicator + trailing-stop + session math (no MT5 import)
   data.py              live rates -> indicator DataFrame
-  strategy.py          LLM decision + rule-based fallback
-  prompts.py           named LLM prompt presets (conservative, trend_follow, ...)
-  llm_guard.py         cost guardrails: only-on-signal, per-day cap, $ limit, caching
+  strategy.py          deterministic SMA/RSI/trend rule strategy
   risk.py              lot sizing, SL/TP, trailing stop, daily-loss guard
   executor.py          open / close / modify-SL through MT5, honours DRY_RUN
   runner.py            main loop
@@ -130,13 +128,12 @@ Python 3. Backtesting runs on **any OS** (Windows, macOS, Linux).
 |------|--------|
 | OS | **Windows 7 SP1 / 10 / 11, 64-bit** — the `MetaTrader5` package is Windows-only. A Windows VPS counts. |
 | Python | **Windows 7 → Python 3.8.10** (last version that installs on Win 7); **Windows 10 / 11 → latest Python 3**. 64-bit, `Add Python to PATH`. |
-| Python packages | `MetaTrader5>=5.0.37`, `pandas>=1.3.5`, `numpy>=1.21`, and `openai>=1.10,<2` if you use LLM mode — all via `pip install -r requirements.txt` |
+| Python packages | `MetaTrader5>=5.0.37`, `pandas>=1.3.5`, and `numpy>=1.21` via `pip install -r requirements.txt` |
 | Broker terminal | **Exness MetaTrader 5** desktop terminal installed and logged in |
 | Exness account | a **demo** account first: login number, password, server (e.g. `Exness-MT5Trial`) |
 | Terminal setting | **Tools → Options → Expert Advisors → Allow algorithmic trading** ticked |
 | Network | a stable internet connection; the PC/VPS must stay on while the bot runs |
 | Disk / RAM | ~1 GB free disk (Python + MT5), 2 GB+ RAM |
-| Optional | an **OpenAI API key** — only if `USE_LLM=True` and you want LLM decisions instead of the rule set |
 
 Hardware is light: the bot polls every few seconds and holds one position at a
 time. Any machine that runs the MT5 terminal comfortably will run the bot.
@@ -261,77 +258,6 @@ and explicit authorization.
 Everything it does is written to `exness_bot/logs/bot.log` and
 `exness_bot/logs/trades.csv`.
 
-## LLM mode + keeping the OpenAI bill tiny
-
-The bot works fully **without** OpenAI — the rule engine is the default and costs
-**$0**. LLM mode just asks a model to sanity-check each *potential* trade.
-
-### Add your API key (do it in VS Code)
-
-1. Create a key: <https://platform.openai.com/api-keys>
-2. **Set a hard spend limit** and turn **auto-recharge OFF**:
-   <https://platform.openai.com/settings/organization/limits> (e.g. $5/month).
-   This is your real safety net.
-3. In VS Code open **`exness_bot/settings.py`** (you made it from
-   `settings.example.py`) and paste the key:
-   ```python
-   OPENAI_API_KEY = "sk-...your key..."
-   OPENAI_MODEL   = "gpt-4o-mini"
-   ```
-   Save. `settings.py` is git-ignored, so the key is never committed.
-4. In `exness_bot/config.py` keep `USE_LLM = True`. Done — the guardrails below
-   are already on.
-
-### Which model? (`OPENAI_MODEL`)
-
-| Model | When | ~cost / decision |
-|---|---|---|
-| `gpt-4o-mini` *(default)* | fine for this simple SMA/RSI strategy | ~$0.00006 |
-| `gpt-4.1-mini` | a bit sharper, still cheap | ~$0.0002 |
-| `gpt-4o` | best judgement on messy / borderline setups | ~$0.001 |
-| `gpt-4.1` | strongest reasoning of these | ~$0.002 |
-
-Even `gpt-4o` stays at **cents per month** because the guardrails below keep the
-number of calls tiny. `llm_guard.py` auto-uses the right price for the log
-estimate.
-
-### The cost guardrails (in `config.py`)
-
-| Setting | Default | What it saves |
-|---|---|---|
-| `LLM_ONLY_ON_SIGNAL` | `True` | **Biggest saver.** Calls the model *only* when the rule engine already sees a buy/sell/close setup. Quiet candles cost nothing. |
-| `LLM_ENTRIES_ONLY` | `True` | Never spends a call on an exit — rules + SL/TP + trailing handle closing. Only entries go to the model. |
-| `LLM_MIN_SECONDS_BETWEEN_CALLS` | `300` | Hard floor on call frequency, whatever the timeframe. |
-| `LLM_MAX_CALLS_PER_DAY` | `20` | Hard cap per UTC day; after it, rules only. |
-| `LLM_DAILY_COST_LIMIT_USD` | `0.15` | Stops calling once the day's *estimated* spend hits this. |
-| `LLM_SKIP_OUTSIDE_SESSION` | `True` | No calls outside `SESSION_UTC_HOURS` / `TRADE_DAYS`. |
-| `LLM_CACHE_SNAPSHOT` | `True` | Reuses the last decision when the market barely moved — no call. |
-| `LLM_SEND_PRICE_HISTORY` | `False` | Keeps the last-10-closes array out of the prompt (fewer input tokens). |
-| `LLM_MAX_OUTPUT_TOKENS` | `40` | The reply is a tiny JSON object; capped low. |
-
-Every real call also uses `response_format=json_object` (no wasted retries) and a
-compact one-line snapshot. `logs/bot.log` prints a running spend estimate:
-`LLM call 3/20 today | ~256 in / 20 out tok | est $0.00005 | est day total $0.0002`.
-
-**Rough cost:** with `gpt-4o-mini`, one decision ≈ **~$0.00006**. Even at the
-20-calls/day cap that's **a few cents a month**; with *only-on-signal* +
-*entries-only* it is usually a handful of calls a day. The dashboard limit in
-step 2 is the ceiling that actually matters.
-
-### Prompt presets (`config.py` → `LLM_PROMPT_NAME`)
-
-`exness_bot/prompts.py` ships five ready-made prompts — set the name in `config.py`:
-
-| Name | Style |
-|---|---|
-| `conservative` *(default)* | trend-aligned, textbook setups only, holds when unsure |
-| `trend_follow` | rides the 200-SMA trend, lets winners run |
-| `mean_reversion` | fades RSI extremes back to the slow SMA |
-| `breakout` | momentum breakouts with expanding ATR, in trend direction |
-| `swing` | rare, high-confluence entries; expects long holds |
-
-Add your own by dropping another template into `PRESETS` in `prompts.py`.
-
 ## Deploy (keep it running 24/5)
 
 The bot must stay running while the market is open, so it needs a machine that is
@@ -367,7 +293,7 @@ restarts it if it exits — e.g. **NSSM** (`nssm install exness-bot`) to registe
 - **Will it run correctly on Exness?** After a day or two of demo debugging
   (server name, symbol suffix, terminal path): likely yes.
 - **Will the built-in strategy make real money?** Unlikely as-is. A basic SMA
-  crossover / generic LLM prompt has no proven edge, and spread + swap +
+  crossover has no proven edge, and spread + swap +
   commission make the expected value negative. The value here is the
   **framework**: safe execution, risk control, and a backtester to find and
   verify an edge you bring yourself.
