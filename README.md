@@ -221,6 +221,8 @@ trailing logic. Review `exness_bot\logs\bot.log` and `trades.csv` daily.
 
 ### 4. Live preparation (disabled)
 
+For the complete beginner-level Exness/MT5 procedure, see [LIVE_TRADING.md](docs/LIVE_TRADING.md).
+
 Live automatic trading is not enabled by this project setup. Do not change
 `LIVE_TRADING_ENABLED`, `DEMO_ONLY`, or the live confirmation gate as part of
 normal use. A future live release would require a separate review, fresh tests,

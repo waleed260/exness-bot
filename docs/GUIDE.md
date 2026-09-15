@@ -430,6 +430,8 @@ tick *"Add Python to PATH"* during install, and use the **64-bit** installer.
 
 ## 6. Live preparation (disabled)
 
+The complete beginner procedure is in [LIVE_TRADING.md](LIVE_TRADING.md).
+
 Live automatic trading is disabled by this project. Do not change
 `LIVE_TRADING_ENABLED`, `DEMO_ONLY`, or the live confirmation gate as part of
 normal setup. A future live release would require a separate review, fresh
