@@ -180,6 +180,11 @@ Exness, and troubleshooting.</p>
 
 <div class="section"></div>
 <h2>1. What the bot does</h2>
+<div class="ok"><strong>Safe development status.</strong> The default execution mode is
+<code>simulation</code> with <code>DRY_RUN=True</code>. The local simulator can open,
+monitor, apply SL/TP, close, persist, and recover test positions without an MT5
+account. Live automatic trading is disabled by <code>LIVE_TRADING_ENABLED=False</code>.
+Creating <code>exness_bot/STOP_TRADING</code> blocks all new entries.</div>
 <p>Once per <strong>closed candle</strong> (default timeframe M15) it runs this pipeline:</p>
 <pre>MT5 price history
       &#9660;
@@ -234,6 +239,12 @@ appended to <code>exness_bot/logs/trades.csv</code>.</p>
 <tr><td><code>DRY_RUN</code></td><td><code>True</code></td><td><code>True</code> = never send a real order, only log what it would do</td></tr>
 <tr><td><code>DEMO_ONLY</code></td><td><code>True</code></td><td>refuse to start if the connected account is a live account</td></tr>
 <tr><td><code>CONFIRM_LIVE_STRING</code></td><td><code>""</code></td><td>must equal <code>"I ACCEPT THE RISK"</code> to run on a live account</td></tr>
+<tr><td><code>EXECUTION_MODE</code></td><td><code>"simulation"</code></td><td><code>simulation</code>, <code>demo</code>, or <code>live</code>; simulation is the default</td></tr>
+<tr><td><code>LIVE_TRADING_ENABLED</code></td><td><code>False</code></td><td>hard gate; remains disabled during development</td></tr>
+<tr><td><code>EMERGENCY_STOP_FILE</code></td><td><code>exness_bot/STOP_TRADING</code></td><td>presence blocks new entries</td></tr>
+<tr><td><code>MAX_TRADES_PER_DAY</code></td><td><code>10</code></td><td>daily entry limit</td></tr>
+<tr><td><code>MAX_CONSECUTIVE_LOSSES</code></td><td><code>3</code></td><td>blocks new entries after consecutive losses</td></tr>
+<tr><td><code>MAX_DATA_AGE_SECONDS</code></td><td><code>7200</code></td><td>rejects stale candles before analysis</td></tr>
 </table>
 
 <h3>Market</h3>
@@ -673,7 +684,7 @@ has to survive the backtest before any money is at stake.</div>
 <tr><td><code>settings.py not found</code></td><td>you didn't copy <code>settings.example.py</code> &rarr; <code>settings.py</code></td></tr>
 <tr><td><code>mt5.initialize failed</code></td><td>wrong <code>MT5_PATH</code>, <code>MT5_SERVER</code>, login or password; terminal not installed</td></tr>
 <tr><td><code>Symbol EURUSD(+suffix) not found</code></td><td>your account uses a different name; add its suffix to <code>_SUFFIXES</code> in <code>mt5_client.py</code></td></tr>
-<tr><td>Decisions logged but no orders</td><td><code>DRY_RUN</code> is still <code>True</code></td></tr>
+<tr><td>Decisions logged but no external orders</td><td>Expected in <code>simulation</code> mode or when <code>DRY_RUN</code> is <code>True</code></td></tr>
 <tr><td><code>OPEN rejected: retcode=10027</code></td><td>AutoTrading disabled in the terminal</td></tr>
 <tr><td><code>OPEN rejected: retcode=10016</code></td><td>invalid stops (broker min distance); raise <code>SL_ATR_MULT</code> or use a higher timeframe</td></tr>
 <tr><td><code>OPEN rejected: retcode=10019</code></td><td>not enough money for that lot; lower <code>RISK_PER_TRADE_PCT</code> or <code>MAX_LOT</code></td></tr>
