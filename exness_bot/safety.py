@@ -62,7 +62,6 @@ class SafetyState:
         if day != self.day:
             self.day = day
             self.trades_today = 0
-            self.consecutive_losses = 0
             self._save()
 
     def record_open(self, exposure_pct, now=None):
@@ -124,6 +123,26 @@ class SignalLedger:
         self.claimed.add(signal_id)
         self._save()
         return True
+
+
+def environment_allows_execution(*, account_is_demo, mode, demo_only,
+                                  live_trading_enabled, confirm_live_string):
+    """Authorize an execution mode before the runner can submit anything."""
+    if mode not in {"simulation", "demo", "live"}:
+        return False, "unknown execution mode"
+    if account_is_demo:
+        if mode == "live":
+            return False, "live mode is not valid for a demo account"
+        return True, "ok"
+    if demo_only:
+        return False, "live account rejected by DEMO_ONLY"
+    if mode != "live":
+        return False, "live account requires live execution mode"
+    if not live_trading_enabled:
+        return False, "live trading gate is disabled"
+    if confirm_live_string != "I ACCEPT THE RISK":
+        return False, "live confirmation string is missing"
+    return True, "ok"
 
 
 def emergency_stop_active(path=None):

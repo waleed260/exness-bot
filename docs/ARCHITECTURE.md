@@ -47,6 +47,6 @@ The MT5 runner obtains broker positions on each loop and uses the broker as the 
 |---|---:|---:|
 | `simulation` | No | Yes |
 | `demo` | Only if `DRY_RUN=False` and the account is demo | No |
-| `live` | Refused while `LIVE_TRADING_ENABLED=False` | No |
+| `live` | Requires live account, live mode, confirmation, and `LIVE_TRADING_ENABLED=True` | No |
 
 `DRY_RUN=True` remains an additional no-order guard in every mode.

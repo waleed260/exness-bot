@@ -11,13 +11,13 @@ python3 -m unittest discover -s tests -v
 The test suite currently covers:
 
 - valid and invalid BUY/SELL order geometry;
-- emergency-stop rejection;
+- emergency-stop and environment-mode rejection;
 - spread, slippage, margin, stale-signal, lot-size, stop-distance, trade-count, and consecutive-loss protections;
 - simulated BUY take-profit and SELL stop-loss;
 - stop-loss tightening without loosening;
 - simulator persistence and restart recovery;
 - reconciliation of a missing external position;
-- persistent risk-state and signal-ledger recovery;
+- persistent risk-state, signal-ledger, and cross-day loss recovery;
 - invalid strategy data becoming `hold`;
 - malformed, stale, duplicated, and non-monotonic candle rejection;
 - BUY, SELL, and strategy-close decisions;

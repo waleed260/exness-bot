@@ -61,13 +61,15 @@ def _trade_log(row):
 
 
 def _guard_live():
-    if mt5_client.is_demo_account():
-        return
-    if config.DEMO_ONLY:
-        raise SystemExit("Refusing to run: connected account is LIVE and config.DEMO_ONLY is True.")
-    if config.CONFIRM_LIVE_STRING != "I ACCEPT THE RISK":
-        raise SystemExit("LIVE account: set config.CONFIRM_LIVE_STRING = 'I ACCEPT THE RISK' to proceed.")
-    log.logger.warning(f"Running against a LIVE account. DRY_RUN={config.DRY_RUN}")
+    allowed, reason = safety.environment_allows_execution(
+        account_is_demo=mt5_client.is_demo_account(), mode=config.EXECUTION_MODE,
+        demo_only=config.DEMO_ONLY, live_trading_enabled=config.LIVE_TRADING_ENABLED,
+        confirm_live_string=config.CONFIRM_LIVE_STRING,
+    )
+    if not allowed:
+        raise SystemExit(f"Execution environment rejected: {reason}")
+    if not mt5_client.is_demo_account():
+        log.logger.warning(f"Running against a LIVE account. DRY_RUN={config.DRY_RUN}")
 
 
 def _manage_open(symbol_info):

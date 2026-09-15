@@ -9,6 +9,20 @@ from exness_bot.logger import event
 
 
 class SafetyTests(unittest.TestCase):
+    def test_environment_guard_never_maps_live_account_to_demo_mode(self):
+        allowed, reason = safety.environment_allows_execution(
+            account_is_demo=False, mode="demo", demo_only=False,
+            live_trading_enabled=False, confirm_live_string="",
+        )
+        self.assertFalse(allowed)
+        self.assertIn("requires live execution mode", reason)
+        allowed, reason = safety.environment_allows_execution(
+            account_is_demo=False, mode="live", demo_only=False,
+            live_trading_enabled=False, confirm_live_string="I ACCEPT THE RISK",
+        )
+        self.assertFalse(allowed)
+        self.assertIn("gate is disabled", reason)
+
     def test_valid_order_and_fail_closed_conditions(self):
         state = safety.SafetyState()
         ok, reason = safety.validate_order(side="buy", volume=0.01, price=100, sl=99, tp=102,
@@ -43,6 +57,9 @@ class SafetyTests(unittest.TestCase):
             state.record_close(-1, now=now)
         self.assertEqual(safety.validate_order(side="buy", volume=0.01, price=100, sl=99, tp=102,
                                                state=state, now=now)[1], "consecutive-loss protection active")
+        state = safety.SafetyState(day=now.date(), consecutive_losses=3)
+        state.roll_day(now + dt.timedelta(days=1))
+        self.assertEqual(state.consecutive_losses, 3)
         old = now - dt.timedelta(seconds=901)
         self.assertEqual(safety.validate_order(side="buy", volume=0.01, price=100, sl=99, tp=102,
                                                signal_time=old, now=now)[1], "signal is stale or from the future")
