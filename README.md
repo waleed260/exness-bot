@@ -226,6 +226,8 @@ Live automatic trading is not enabled by this project setup. Do not change
 normal use. A future live release would require a separate review, fresh tests,
 and explicit authorization.
 
+The future LIVE path is implemented but disabled by default. It requires explicit live mode, DRY_RUN disabled, DEMO_ONLY disabled, the live gate enabled, the confirmation string, and verified real-account MT5 connection. This project has not performed real-money execution testing.
+
 ## Run it in VS Code
 
 1. Install **VS Code** and its **Python extension** (Microsoft).

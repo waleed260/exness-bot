@@ -435,6 +435,10 @@ Live automatic trading is disabled by this project. Do not change
 normal setup. A future live release would require a separate review, fresh
 broker-specific tests, and explicit authorization.
 
+### Exact future LIVE configuration
+
+The LIVE path is implemented but intentionally disabled by default. After demo validation, an authorized operator must verify: EXECUTION_MODE = live, DRY_RUN = False, DEMO_ONLY = False, LIVE_TRADING_ENABLED = True, and CONFIRM_LIVE_STRING = I ACCEPT THE RISK. The runner also verifies that MT5 is connected to a real account. This project has not performed real-money execution testing.
+
 Keep the machine/VPS and MT5 terminal available for simulation or demo testing;
 no live account is needed for the local simulation command.
 

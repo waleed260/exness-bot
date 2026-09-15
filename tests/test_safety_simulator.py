@@ -27,6 +27,15 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertFalse(allowed)
         self.assertIn("gate is disabled", reason)
+        allowed, reason = safety.environment_allows_execution(account_is_demo=False, mode="live", demo_only=False, live_trading_enabled=True, confirm_live_string="")
+        self.assertFalse(allowed)
+        self.assertIn("confirmation string is missing", reason)
+        allowed, reason = safety.environment_allows_execution(account_is_demo=False, mode="live", demo_only=False, live_trading_enabled=True, confirm_live_string="I ACCEPT THE RISK")
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "ok")
+        allowed, reason = safety.environment_allows_execution(account_is_demo=True, mode="live", demo_only=False, live_trading_enabled=True, confirm_live_string="I ACCEPT THE RISK")
+        self.assertFalse(allowed)
+        self.assertIn("not valid for a demo account", reason)
 
     def test_valid_order_and_fail_closed_conditions(self):
         state = safety.SafetyState()
