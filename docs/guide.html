@@ -157,11 +157,13 @@ double-click a few files and fill in one form.</p>
 
 <li><strong>Step 8 &mdash; Only when you are ready for more</strong>
   <ul>
-    <li><em>Trade the demo for real</em> (still fake money): open
-      <code>exness_bot\config.py</code> in Notepad, find <code>DRY_RUN = True</code>,
-      change it to <code>DRY_RUN = False</code>, save. Run <code>run.bat</code> again.</li>
-    <li><em>Real money:</em> only after several weeks of good demo results. See
-      Part&nbsp;6. Start with the smallest possible size.</li>
+    <li><em>Automatic demo orders</em> (still fake money): open
+      <code>exness_bot\config.py</code> and set
+      <code>EXECUTION_MODE = "demo"</code>, <code>DRY_RUN = False</code>, while
+      keeping <code>DEMO_ONLY = True</code>. Confirm the startup log says
+      <code>mode=demo</code> before leaving it running.</li>
+    <li><em>Real money:</em> live automatic trading is disabled in this project.
+      Do not change the live gate as part of normal setup.</li>
   </ul>
 </li>
 </ol>
@@ -185,6 +187,25 @@ Exness, and troubleshooting.</p>
 monitor, apply SL/TP, close, persist, and recover test positions without an MT5
 account. Live automatic trading is disabled by <code>LIVE_TRADING_ENABLED=False</code>.
 Creating <code>exness_bot/STOP_TRADING</code> blocks all new entries.</div>
+<h3>How to use it in simple stages</h3>
+<ol>
+<li><strong>Backtest</strong> the strategy on historical candles.</li>
+<li><strong>Run local simulation</strong> with <code>python -m exness_bot.simulate --csv ...</code>.
+It makes decisions and manages simulated positions without MT5.</li>
+<li><strong>Run demo dry-run</strong> with <code>DRY_RUN=True</code>. It reads demo
+prices and logs decisions but sends no orders.</li>
+<li><strong>Run automatic demo execution</strong> only after reviewing the dry-run:
+set <code>EXECUTION_MODE = "demo"</code>, <code>DRY_RUN = False</code>, and keep
+<code>DEMO_ONLY = True</code>.</li>
+</ol>
+<p>Automatic trading means the program receives data, waits for closed candles,
+calculates indicators, chooses <code>BUY</code>, <code>SELL</code>, or
+<code>NO-TRADE</code>, performs safety checks, and manages approved demo or
+simulated positions without a human clicking each action. It does not guarantee
+profit.</p>
+<p>Press <code>Ctrl+C</code> to stop normally. Create
+<code>exness_bot/STOP_TRADING</code> to block new entries immediately; it does not
+forcibly close existing positions.</p>
 <p>Once per <strong>closed candle</strong> (default timeframe M15) it runs this pipeline:</p>
 <pre>MT5 price history
       &#9660;
@@ -437,31 +458,25 @@ MT5_SERVER   = "Exness-MT5Trial"
 OPENAI_API_KEY = ""          # leave empty to use the rule-based strategy
 OPENAI_MODEL   = "gpt-4o-mini"</pre>
 <span class="small">(<code>settings.py</code> is git-ignored &mdash; credentials never get committed.)</span></li>
-<li>First run with <code>DRY_RUN = True</code> (the default):
+<li>First run in safe simulation/dry-run mode. Keep
+<code>EXECUTION_MODE = "simulation"</code> and <code>DRY_RUN = True</code>:
 <pre>python -m exness_bot.runner</pre>
-Watch <code>exness_bot/logs/bot.log</code>. You'll see decisions and lines like
-<code>[DRY_RUN] would OPEN buy 0.02 EURUSD ...</code>. No orders are sent.</li>
-<li>When the dry-run behaviour looks sane, set <code>DRY_RUN = False</code> in
-<code>exness_bot/config.py</code> and run again. Now it trades the <strong>demo</strong>
-account for real. Let it run for <strong>several weeks</strong>; review <code>logs/trades.csv</code>.</li>
+Watch <code>exness_bot/logs/bot.log</code>. No external orders are sent.</li>
+<li>After the dry-run looks sane, set <code>EXECUTION_MODE = "demo"</code> and
+<code>DRY_RUN = False</code>. Keep <code>DEMO_ONLY = True</code>, confirm the MT5
+terminal is logged into the demo account, and check the startup log says
+<code>mode=demo</code>. This sends automatic orders to the demo account only.
+Let it run for <strong>several weeks</strong>; review <code>logs/trades.csv</code>.</li>
+<li>Stop with <code>Ctrl+C</code>. For an emergency stop, create
+<code>exness_bot\STOP_TRADING</code>; this blocks new entries.</li>
 </ol>
 
 <div class="section"></div>
-<h2>6. Step-by-step: going live (only after profitable demo)</h2>
-<ol>
-<li>In <code>exness_bot/config.py</code>:
-<pre>DEMO_ONLY = False
-CONFIRM_LIVE_STRING = "I ACCEPT THE RISK"
-MAX_LOT = 0.01
-RISK_PER_TRADE_PCT = 0.25      # start smaller than on demo</pre></li>
-<li>Put your <strong>live</strong> account details in <code>settings.py</code>.</li>
-<li>Run <code>python -m exness_bot.runner</code>. It logs a warning that it is on a live account.</li>
-<li>Watch it daily for the first weeks. Keep the daily loss limit tight.</li>
-<li>Scale size up only after months of consistent results, never faster than your drawdown tolerance.</li>
-</ol>
-<p class="small">Keep the machine/VPS on and the MT5 terminal running. If the terminal
-closes, the bot loses its connection &mdash; open positions keep their broker-side
-SL/TP, but the trailing logic pauses until it reconnects.</p>
+<h2>6. Live preparation (disabled)</h2>
+<div class="warn"><strong>Live automatic trading is disabled.</strong> Do not change
+<code>LIVE_TRADING_ENABLED</code>, <code>DEMO_ONLY</code>, or the live confirmation
+gate as part of normal use. A future live release would require a separate review,
+fresh tests, and explicit authorization.</div>
 
 <div class="section"></div>
 <h2>7. LLM mode &amp; keeping the OpenAI bill tiny</h2>
@@ -705,14 +720,16 @@ has to survive the backtest before any money is at stake.</div>
 <li>[ ] Backtested on &ge; 2 years of data, on &ge; 2 symbols &rarr; positive expectancy, PF &gt; 1.15</li>
 <li>[ ] Walk-forward / out-of-sample check also positive</li>
 <li>[ ] Ran on demo with <code>DRY_RUN=True</code>, decisions look sane in the log</li>
-<li>[ ] Ran on demo with <code>DRY_RUN=False</code> for &ge; 4 weeks &rarr; result matches the backtest</li>
+<li>[ ] Ran automatic demo mode with <code>EXECUTION_MODE="demo"</code> and
+<code>DRY_RUN=False</code> for &ge; 4 weeks &rarr; result matches the backtest</li>
 <li>[ ] <code>RISK_PER_TRADE_PCT</code> &le; 0.25, <code>DAILY_MAX_LOSS_PCT</code> &le; 2, <code>MAX_LOT</code> small</li>
 <li>[ ] <code>MAX_TOTAL_LOSS_PCT</code> set to a number you would actually accept losing</li>
 <li>[ ] Account type has low spread; you understand swap on your instrument</li>
 <li>[ ] VPS / machine stays on; MT5 terminal set to start with the OS</li>
 <li>[ ] You can afford to lose the whole account balance</li>
 </ul>
-<p>Only when every box is ticked: set the two live flags and start at <code>0.01</code> lots.</p>
+<p>These checks prepare a future review; they do not enable live trading. The
+live flags remain disabled in this project.</p>
 
 </body>
 </html>

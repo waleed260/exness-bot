@@ -96,10 +96,12 @@ pick your pair/timeframe, *Export Bars* to a CSV. Double-click **`backtest.bat`*
 and drag the CSV into the window. It prints profit/loss and an **EDGE / NO EDGE**
 verdict.
 
-**Step 8 — Only when ready for more.**
-- *Trade the demo for real* (still fake money): open `exness_bot\config.py` in
-  Notepad, change `DRY_RUN = True` to `DRY_RUN = False`, save, run `run.bat` again.
-- *Real money:* only after weeks of good demo results (see Part 6). Smallest size.
+**Step 8 — Automatic demo testing, only after dry-run review.**
+- Open `exness_bot\config.py` and set `EXECUTION_MODE = "demo"` and
+  `DRY_RUN = False`; keep `DEMO_ONLY = True`.
+- Confirm the startup log says `mode=demo`, verify MT5 is still logged into the
+  demo account, and leave it running only while you can monitor it.
+- Live automatic trading is disabled by this project. Do not change the live gate.
 
 > **Golden rules.** 1) Never skip the demo stage. 2) Never use money you cannot
 > afford to lose. 3) The built-in strategy is a *starting point*, not a money
@@ -120,6 +122,31 @@ live execution is disabled by `LIVE_TRADING_ENABLED=False`.
 A global emergency stop is activated by creating the file
 `exness_bot/STOP_TRADING`. While that file exists, no new entry is accepted.
 Remove it only after reviewing the logs and deliberately re-enabling operation.
+
+### How to use it in simple stages
+
+Use the bot in this order:
+
+1. **Backtest** the strategy on historical candles.
+2. **Run local simulation** with `python -m exness_bot.simulate --csv ...`. This
+   makes automatic decisions and manages simulated positions without MT5.
+3. **Run demo dry-run** with `DRY_RUN=True`. The bot receives demo prices and
+   logs decisions but sends no orders.
+4. **Run automatic demo execution** only after reviewing the dry-run. Set
+   `EXECUTION_MODE = "demo"`, `DRY_RUN = False`, and keep `DEMO_ONLY = True`.
+
+“Automatic trading” means the program receives data, waits for closed candles,
+calculates indicators, chooses `BUY`, `SELL`, or `NO-TRADE`, performs safety checks,
+then manages approved demo/simulated positions without requiring a click for every
+entry or exit. It does not guarantee profit.
+
+The bot can automatically apply broker-side SL/TP, move a stop to break-even,
+trail the stop, close at SL/TP, and close when the strategy detects an opposing
+SMA crossover.
+
+To stop normally, press `Ctrl+C`. To block new entries immediately, create
+`exness_bot/STOP_TRADING`; existing positions are not forcibly closed by that
+file, so their broker-side protection remains in control.
 
 Once per **closed candle** (default timeframe M15) it runs this pipeline:
 
@@ -409,37 +436,32 @@ tick *"Add Python to PATH"* during install, and use the **64-bit** installer.
    OPENAI_MODEL   = "gpt-4o-mini"
    ```
    (`settings.py` is git-ignored — credentials never get committed.)
-6. First run with `DRY_RUN = True` (the default):
+6. First run in safe simulation/dry-run mode:
    ```
    python -m exness_bot.runner
    ```
-   Watch `exness_bot/logs/bot.log`. You'll see decisions and lines like
-   `[DRY_RUN] would OPEN buy 0.02 EURUSD ...`. No orders are sent.
-7. When the dry-run behaviour looks sane, set `DRY_RUN = False` in
-   `exness_bot/config.py` and run again. Now it trades the **demo** account for
-   real. Let it run for **several weeks**. Review `logs/trades.csv`.
+   Keep `EXECUTION_MODE = "simulation"` and `DRY_RUN = True`. Watch
+   `exness_bot/logs/bot.log`; no external orders are sent.
+7. After the dry-run looks sane, set `EXECUTION_MODE = "demo"` and
+   `DRY_RUN = False`. Keep `DEMO_ONLY = True`, verify the MT5 terminal is still
+   logged into the demo account, and confirm the startup log says `mode=demo`.
+   This sends automatic orders to the demo account only. Let it run for several
+   weeks and review `logs/trades.csv`.
+8. Stop with `Ctrl+C`. For an emergency stop, create
+   `exness_bot/STOP_TRADING`; this blocks new entries and does not forcibly close
+   existing positions.
 
 ---
 
-## 6. Step-by-step: going live (only after profitable demo)
+## 6. Live preparation (disabled)
 
-1. In `exness_bot/config.py`:
-   ```python
-   DEMO_ONLY = False
-   CONFIRM_LIVE_STRING = "I ACCEPT THE RISK"
-   MAX_LOT = 0.01
-   RISK_PER_TRADE_PCT = 0.25      # start smaller than on demo
-   ```
-2. Put your **live** account details in `settings.py`.
-3. Run `python -m exness_bot.runner`. It will log a warning that it is on a live
-   account.
-4. Watch it daily for the first weeks. Keep the daily loss limit tight.
-5. Scale size up only after months of consistent results, and never faster than
-   your drawdown tolerance.
+Live automatic trading is disabled by this project. Do not change
+`LIVE_TRADING_ENABLED`, `DEMO_ONLY`, or the live confirmation gate as part of
+normal setup. A future live release would require a separate review, fresh
+broker-specific tests, and explicit authorization.
 
-Keep the machine/VPS on and the MT5 terminal running — if the terminal closes,
-the bot loses its connection (open positions keep their broker-side SL/TP, but
-the trailing logic stops until it reconnects).
+Keep the machine/VPS and MT5 terminal available for simulation or demo testing;
+no live account is needed for the local simulation command.
 
 ---
 
@@ -704,11 +726,13 @@ backtest before any money is at stake.
 - [ ] Backtested on ≥ 2 years of data, on ≥ 2 symbols → positive expectancy, PF > 1.15
 - [ ] Walk-forward / out-of-sample check also positive
 - [ ] Ran on demo with `DRY_RUN=True`, decisions look sane in the log
-- [ ] Ran on demo with `DRY_RUN=False` for ≥ 4 weeks → result matches the backtest
+- [ ] Ran automatic demo mode with `EXECUTION_MODE="demo"` and `DRY_RUN=False`
+      for ≥ 4 weeks → result matches the backtest
 - [ ] `RISK_PER_TRADE_PCT` ≤ 0.25, `DAILY_MAX_LOSS_PCT` ≤ 2, `MAX_LOT` small
 - [ ] `MAX_TOTAL_LOSS_PCT` set to a number you would actually accept losing
 - [ ] Account type has low spread; you understand swap on your instrument
 - [ ] VPS / machine stays on; MT5 terminal set to start with the OS
 - [ ] You can afford to lose the whole account balance
 
-Only when every box is ticked: set the two live flags and start at `0.01` lots.
+These checks prepare a future review; they do not enable live trading. The live
+flags remain disabled in this project.

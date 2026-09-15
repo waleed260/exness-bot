@@ -31,6 +31,47 @@ The system now includes fail-closed order validation, an emergency stop file
 margin/spread/slippage/stale-data checks, persistent risk and signal state, a
 local simulator, restart reconciliation, and ambiguity-safe order retries. These controls reduce avoidable execution risk; they do
 not eliminate market losses or guarantee profitability.
+## How to use the bot
+
+You do not need to start with automatic orders. Use these stages:
+
+1. **Backtest:** test the existing strategy on historical candles. Do not continue
+   if the result says `NO EDGE`.
+2. **Local simulation:** run the bot automatically against a CSV. It makes
+   decisions, opens simulated positions, applies SL/TP, trails stops, closes
+   positions, and saves recovery state. It cannot contact a broker.
+3. **Demo dry-run:** connect to a demo MT5 account with `DRY_RUN=True`. The bot
+   reads live demo prices and logs what it would do, but sends no orders.
+4. **Demo automatic execution:** only after dry-run review, set
+   `EXECUTION_MODE = "demo"` and `DRY_RUN = False`, while keeping
+   `DEMO_ONLY = True`. This is the only automatic-order mode described in this
+   guide, and it must use a demo account.
+
+The current defaults are safe: `EXECUTION_MODE = "simulation"`, `DRY_RUN = True`,
+`DEMO_ONLY = True`, and `LIVE_TRADING_ENABLED = False`. A live account is rejected
+by the environment gate, and live mode cannot run while the live gate is false.
+
+### What “automatic trading” means
+
+Once running, the bot repeatedly receives market data, waits for a closed candle,
+calculates the existing SMA/RSI/ATR/trend indicators, chooses `BUY`, `SELL`, or
+`NO-TRADE`, validates spread/session/data/risk conditions, and then either logs or
+submits the permitted demo action. It monitors open positions every poll and can
+automatically move the stop to break-even, trail it, close at SL/TP, or close
+when the strategy says the trade thesis has changed.
+
+Automatic trading does **not** mean guaranteed profit. It means the software can
+make and manage decisions without a human clicking each order. You should still
+review the logs and stop the process if behavior is unexpected.
+
+### How to stop it
+
+- Press `Ctrl+C` in the bot window for a normal shutdown.
+- To stop new entries immediately, create `exness_bot/STOP_TRADING`. The bot will
+  keep existing broker-side SL/TP management but will not open new positions.
+- Remove the stop file only after reviewing `bot.log`; it is ignored by Git.
+- Check `exness_bot/logs/bot.log` and `trades.csv` after every test session.
+
 
 ## What it does
 
@@ -144,22 +185,49 @@ This uses the persistent simulator, applies simulated SL/TP and strategy exits,
 and writes restart state under `exness_bot/logs/`. It never submits an external
 order and reports `external orders: 0`.
 
-### 3. Demo (Windows only — the `MetaTrader5` package needs Windows)
+### 3. Demo automatic test (Windows only — MT5 is Windows-only)
 
-```
-pip install -r requirements.txt
-copy exness_bot\settings.example.py exness_bot\settings.py   # then edit it
-python -m exness_bot.runner
-```
+1. Install the Exness MT5 terminal, log into a **demo** account, and enable
+   **Tools → Options → Expert Advisors → Allow algorithmic trading**.
+2. Install dependencies and create your private settings file:
 
-`DRY_RUN=True` logs the orders it *would* place without touching the account.
-When it looks right on demo, set `DRY_RUN=False` (still a demo account).
+   ```
+   pip install -r requirements.txt
+   copy exness_bot\settings.example.py exness_bot\settings.py
+   ```
 
-### 4. Live preparation (not enabled)
+3. Start with these values in `exness_bot/config.py`:
 
-Deliberately awkward: in `config.py` set `DEMO_ONLY=False` **and**
-`CONFIRM_LIVE_STRING="I ACCEPT THE RISK"`, keep `MAX_LOT=0.01`, and only after
-weeks of profitable demo results.
+   ```python
+   EXECUTION_MODE = "simulation"
+   DRY_RUN = True
+   DEMO_ONLY = True
+   LIVE_TRADING_ENABLED = False
+   ```
+
+   Run `python -m exness_bot.runner`. This reads demo prices but sends no order.
+4. After reviewing several sessions of logs, change only these two settings for
+   automatic **demo** orders:
+
+   ```python
+   EXECUTION_MODE = "demo"
+   DRY_RUN = False
+   ```
+
+   Keep `DEMO_ONLY = True`. Confirm the startup log says `mode=demo`, and confirm
+   the MT5 terminal is logged into the demo account before leaving it running.
+5. Stop with `Ctrl+C`. If anything looks wrong, create
+   `exness_bot\STOP_TRADING` and then stop the process.
+
+The bot will automatically manage demo positions using broker-side SL/TP and its
+trailing logic. Review `exness_bot\logs\bot.log` and `trades.csv` daily.
+
+### 4. Live preparation (disabled)
+
+Live automatic trading is not enabled by this project setup. Do not change
+`LIVE_TRADING_ENABLED`, `DEMO_ONLY`, or the live confirmation gate as part of
+normal use. A future live release would require a separate review, fresh tests,
+and explicit authorization.
 
 ## Run it in VS Code
 
