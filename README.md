@@ -132,7 +132,19 @@ Per-trade detail lands in `exness_bot/logs/backtest_trades.csv`. Full step-by-st
 with screenshots-worth of detail is **Part 4 of the PDF guide**.
 **Do not forward-test a strategy the backtest says has no edge.**
 
-### 2. Demo (Windows only — the `MetaTrader5` package needs Windows)
+### 2. Local simulation (any OS, no account needed)
+
+To run the existing rule strategy as an automated local simulation:
+
+```
+python -m exness_bot.simulate --csv data/EURUSD_M15.csv
+```
+
+This uses the persistent simulator, applies simulated SL/TP and strategy exits,
+and writes restart state under `exness_bot/logs/`. It never submits an external
+order and reports `external orders: 0`.
+
+### 3. Demo (Windows only — the `MetaTrader5` package needs Windows)
 
 ```
 pip install -r requirements.txt
@@ -143,7 +155,7 @@ python -m exness_bot.runner
 `DRY_RUN=True` logs the orders it *would* place without touching the account.
 When it looks right on demo, set `DRY_RUN=False` (still a demo account).
 
-### 3. Live
+### 4. Live preparation (not enabled)
 
 Deliberately awkward: in `config.py` set `DEMO_ONLY=False` **and**
 `CONFIRM_LIVE_STRING="I ACCEPT THE RISK"`, keep `MAX_LOT=0.01`, and only after
