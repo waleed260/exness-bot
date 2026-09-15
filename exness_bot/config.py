@@ -71,6 +71,8 @@ TRADE_DAYS = [0, 1, 2, 3, 4]  # Mon..Fri (weekday numbers)
 DEVIATION_POINTS = 20     # max slippage in points
 MAGIC = 20240601          # bot id stamped on orders
 POLL_SECONDS = 5          # how often the loop checks for a new closed candle
+MAX_RECONNECT_ATTEMPTS = 3
+RECONNECT_BACKOFF_SECONDS = 5
 ORDER_RETRIES = 3         # retries on requote / price-changed
 TRADE_LOG_CSV = "exness_bot/logs/trades.csv"
 

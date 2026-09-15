@@ -2,6 +2,7 @@
 
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 
@@ -14,7 +15,7 @@ _logger = logging.getLogger("exness_bot")
 _logger.setLevel(logging.INFO)
 
 if not _logger.handlers:
-    _fh = logging.FileHandler(os.path.join(_LOG_DIR, "bot.log"))
+    _fh = RotatingFileHandler(os.path.join(_LOG_DIR, "bot.log"), maxBytes=5 * 1024 * 1024, backupCount=3)
     _fh.setFormatter(_fmt)
     _logger.addHandler(_fh)
 

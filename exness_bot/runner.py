@@ -24,6 +24,7 @@ from exness_bot import strategy
 from exness_bot import risk
 from exness_bot import executor
 from exness_bot import safety
+from exness_bot import recovery
 
 
 def _position(symbol_info=None):
@@ -197,6 +198,23 @@ def _log_environment():
         pass
 
 
+def _recover_connection():
+    """Bounded reconnect loop; returns resolved symbol info or None."""
+    delays = recovery.backoff_delays(config.MAX_RECONNECT_ATTEMPTS, config.RECONNECT_BACKOFF_SECONDS)
+    for attempt in range(1, config.MAX_RECONNECT_ATTEMPTS + 1):
+        try:
+            mt5_client.reconnect()
+            info = mt5_client.resolve_symbol()
+            log.event("reconnected", attempt=attempt)
+            return info
+        except Exception as exc:
+            log.event("reconnect_failed", attempt=attempt, error=str(exc))
+            log.logger.error(f"Reconnect attempt {attempt} failed: {exc}")
+            if attempt < config.MAX_RECONNECT_ATTEMPTS:
+                time.sleep(delays[attempt - 1])
+    return None
+
+
 def _total_loss_exceeded(launch_equity):
     """Hard kill switch: stop the bot for good if equity falls too far below the
     equity we started this run with. Not reset by the day rollover."""
@@ -248,6 +266,16 @@ def main():
             current_positions = _tracked_positions()
             _reconcile_closed_positions(known_positions, current_positions, safety_state)
             known_positions = current_positions
+            if not mt5_client.connected():
+                log.event("connection_lost")
+                symbol_info = _recover_connection()
+                if symbol_info is None:
+                    log.logger.critical("Connection recovery exhausted; stopping safely")
+                    break
+                known_positions = _tracked_positions()
+                safety_state.reconcile_open_positions(len(known_positions), config.RISK_PER_TRADE_PCT)
+                continue
+
             _manage_open(symbol_info)
 
             r = mt5_client.rates(mt5_client.resolved_symbol(), config.TIMEFRAME, 2)

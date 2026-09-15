@@ -4,11 +4,16 @@ import unittest
 from pathlib import Path
 
 from exness_bot import safety
+from exness_bot import recovery
 from exness_bot import simulator
 from exness_bot.logger import event
 
 
 class SafetyTests(unittest.TestCase):
+    def test_reconnect_backoff_is_bounded(self):
+        self.assertEqual(recovery.backoff_delays(4, 5, 12), [5.0, 10.0, 12.0])
+        self.assertEqual(recovery.backoff_delays(1, 5), [])
+
     def test_environment_guard_never_maps_live_account_to_demo_mode(self):
         allowed, reason = safety.environment_allows_execution(
             account_is_demo=False, mode="demo", demo_only=False,

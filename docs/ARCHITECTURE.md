@@ -32,7 +32,7 @@ MT5 closed candles
 - `risk.py`: calculates risk-based lot size, broker minimum stop distances, daily equity guard, and trailing stops.
 - `executor.py`: isolates MT5 order requests and retries. It refuses live mode unless the explicit live gate is enabled; simulation and dry-run never call `order_send`; ambiguous broker timeouts are not retried automatically.
 - `simulator.py`: deterministic local broker substitute. It supports open, stop/target monitoring, monotonic stop changes, manual close, persistence, and restart reconciliation.
-- `runner.py`: orchestrates startup, live data polling, position management, signal handling, validation, execution, and shutdown.
+- `runner.py` / `recovery.py`: orchestrate startup, bounded exponential connection recovery, position management, signal handling, validation, execution, and shutdown.
 - `backtest.py`: evaluates the rule strategy on historical candles with spread and commission assumptions.
 
 ## State and recovery
@@ -49,4 +49,4 @@ The MT5 runner obtains broker positions on each loop and uses the broker as the 
 | `demo` | Only if `DRY_RUN=False` and the account is demo | No |
 | `live` | Requires live account, live mode, confirmation, and `LIVE_TRADING_ENABLED=True` | No |
 
-`DRY_RUN=True` remains an additional no-order guard in every mode.
+`DRY_RUN=True` remains an additional no-order guard in every mode. Connection loss triggers bounded exponential reconnect attempts; exhausting them stops the process safely instead of creating new trades without a verified connection.

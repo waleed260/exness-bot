@@ -120,5 +120,19 @@ def tick(symbol=None):
     return mt5.symbol_info_tick(symbol or resolved_symbol())
 
 
+def connected():
+    """Return whether MT5 currently exposes an account snapshot."""
+    try:
+        return mt5.account_info() is not None
+    except Exception:
+        return False
+
+
+def reconnect():
+    """Reinitialize the terminal connection using the configured credentials."""
+    mt5.shutdown()
+    return connect()
+
+
 def shutdown():
     mt5.shutdown()
