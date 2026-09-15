@@ -33,6 +33,20 @@ def _position(symbol_info=None):
     return None, None
 
 
+def _tracked_positions():
+    return {p.ticket: p for p in mt5_client.positions() if p.magic == config.MAGIC}
+
+
+def _reconcile_closed_positions(previous, current, safety_state):
+    for ticket in set(previous) - set(current):
+        pnl = mt5_client.position_profit(ticket)
+        # If broker history is unavailable, treat the unknown outcome as a loss
+        # so the bot fails closed rather than silently bypassing loss protection.
+        safety_state.record_close(-1.0 if pnl is None else pnl, config.RISK_PER_TRADE_PCT)
+        log.event("position_reconciled_closed", ticket=ticket,
+                  pnl="unknown" if pnl is None else pnl)
+
+
 def _trade_log(row):
     try:
         os.makedirs(os.path.dirname(config.TRADE_LOG_CSV), exist_ok=True)
@@ -94,7 +108,7 @@ def _entry_allowed(snap, symbol_info, guard):
     return True
 
 
-def _handle_candle(symbol_info, guard, safety_state):
+def _handle_candle(symbol_info, guard, safety_state, signal_ledger):
     df = data_mod.load_frame()
     snap = data_mod.snapshot(df)
     side, pos = _position(symbol_info)
@@ -134,12 +148,18 @@ def _handle_candle(symbol_info, guard, safety_state):
             free_margin_pct = getattr(acc, "margin_free", acc.equity) / acc.equity * 100.0
         valid, reason = safety.validate_order(
             side=action, volume=lot, price=entry, sl=sl_price, tp=tp_price,
-            spread_points=mt5_client.spread_points(), free_margin_pct=free_margin_pct,
+            spread_points=mt5_client.spread_points(), slippage_points=config.DEVIATION_POINTS,
+            free_margin_pct=free_margin_pct,
             state=safety_state, existing_positions=len(mt5_client.positions()),
             account_exposure_pct=config.RISK_PER_TRADE_PCT,
         )
         if not valid:
+            log.event("trade_rejected", side=action, reason=reason, mode=config.EXECUTION_MODE)
             log.logger.warning(f"Rejected {action} entry: {reason}")
+            return
+        signal_id = f"{mt5_client.resolved_symbol()}:{snap['time']}:{action}"
+        if not signal_ledger.claim(signal_id):
+            log.logger.warning(f"Rejected duplicate/stale signal claim: {signal_id}")
             return
         log.logger.info(f"Entering {action} {lot} lots entry~{entry} sl={sl_price:.5f} tp={tp_price:.5f}")
         r = executor.open_position(action, lot, sl_price, tp_price, symbol_info)
@@ -200,11 +220,16 @@ def main():
     _guard_live()
     symbol_info = mt5_client.resolve_symbol()
     guard = risk.DailyGuard()
-    safety_state = safety.SafetyState()
+    safety_state = safety.SafetyState(config.SAFETY_STATE_FILE)
+    signal_ledger = safety.SignalLedger(config.SIGNAL_LEDGER_FILE)
+    known_positions = _tracked_positions()
+    safety_state.reconcile_open_positions(len(known_positions), config.RISK_PER_TRADE_PCT)
 
     _acc = mt5_client.account_info()
     launch_equity = _acc.equity if _acc else 0.0
 
+    log.event("startup", mode=config.EXECUTION_MODE, dry_run=config.DRY_RUN,
+              live_trading_enabled=config.LIVE_TRADING_ENABLED)
     log.logger.info(
         f"Bot started. symbol={mt5_client.resolved_symbol()} tf={config.TIMEFRAME} "
         f"mode={config.EXECUTION_MODE} DRY_RUN={config.DRY_RUN} "
@@ -218,6 +243,9 @@ def main():
             if _total_loss_exceeded(launch_equity):
                 break
 
+            current_positions = _tracked_positions()
+            _reconcile_closed_positions(known_positions, current_positions, safety_state)
+            known_positions = current_positions
             _manage_open(symbol_info)
 
             r = mt5_client.rates(mt5_client.resolved_symbol(), config.TIMEFRAME, 2)
@@ -226,7 +254,7 @@ def main():
                 if closed_bar_time != last_bar_time:
                     last_bar_time = closed_bar_time
                     try:
-                        _handle_candle(symbol_info, guard, safety_state)
+                        _handle_candle(symbol_info, guard, safety_state, signal_ledger)
                     except Exception as e:
                         log.logger.exception(f"Error handling candle: {e}")
             time.sleep(config.POLL_SECONDS)

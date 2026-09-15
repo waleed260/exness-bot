@@ -28,8 +28,8 @@ explicitly changed in a separately reviewed release. See
 
 The system now includes fail-closed order validation, an emergency stop file
 (`exness_bot/STOP_TRADING`), daily trade limits, consecutive-loss protection,
-margin/spread/stale-signal checks, a persistent local simulator, and restart
-reconciliation tests. These controls reduce avoidable execution risk; they do
+margin/spread/slippage/stale-data checks, persistent risk and signal state, a
+local simulator, restart reconciliation, and ambiguity-safe order retries. These controls reduce avoidable execution risk; they do
 not eliminate market losses or guarantee profitability.
 
 ## What it does

@@ -23,7 +23,7 @@ def run(df, state_path=None):
     df = indicators.add_indicators(df.copy())
     warmup = max(config.SMA_SLOW, config.TREND_SMA) + config.TREND_SLOPE_LOOKBACK + 2
     sim = simulator.Simulator(state_path)
-    guard = safety.SafetyState()
+    guard = safety.SafetyState(f"{state_path}.risk" if state_path else None)
     decisions = []
 
     for i in range(warmup, len(df)):

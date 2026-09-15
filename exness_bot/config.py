@@ -18,11 +18,18 @@ CONFIRM_LIVE_STRING = ""  # to trade live, set DEMO_ONLY=False AND set this to "
 EXECUTION_MODE = "simulation"  # simulation | demo | live; simulation is the safe default
 LIVE_TRADING_ENABLED = False    # remains False until a separately reviewed release
 EMERGENCY_STOP_FILE = "exness_bot/STOP_TRADING"
+SAFETY_STATE_FILE = "exness_bot/logs/safety_state.json"
+SIGNAL_LEDGER_FILE = "exness_bot/logs/signal_ledger.json"
+MIN_SL_DISTANCE = 0.0       # price units; 0 = broker/strategy minimum only
+MAX_SL_DISTANCE = 0.0       # price units; 0 = disabled
+MIN_TP_DISTANCE = 0.0       # price units; 0 = broker/strategy minimum only
+MAX_TP_DISTANCE = 0.0       # price units; 0 = disabled
 MAX_TRADES_PER_DAY = 10
 MAX_CONSECUTIVE_LOSSES = 3
 MAX_ACCOUNT_EXPOSURE_PCT = 2.0
 MIN_FREE_MARGIN_PCT = 100.0
 MAX_SIGNAL_AGE_SECONDS = 900
+MAX_DATA_AGE_SECONDS = 7200
 MAX_SLIPPAGE_POINTS = 20
 
 # ---------------- Market ----------------

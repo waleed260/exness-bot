@@ -12,12 +12,14 @@ The test suite currently covers:
 
 - valid and invalid BUY/SELL order geometry;
 - emergency-stop rejection;
-- spread, margin, stale-signal, trade-count, and consecutive-loss protections;
+- spread, slippage, margin, stale-signal, lot-size, stop-distance, trade-count, and consecutive-loss protections;
 - simulated BUY take-profit and SELL stop-loss;
 - stop-loss tightening without loosening;
 - simulator persistence and restart recovery;
 - reconciliation of a missing external position;
+- persistent risk-state and signal-ledger recovery;
 - invalid strategy data becoming `hold`;
+- malformed, stale, duplicated, and non-monotonic candle rejection;
 - BUY, SELL, and strategy-close decisions;
 - indicator snapshot construction;
 - historical backtest execution.

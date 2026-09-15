@@ -193,6 +193,12 @@ to `exness_bot/logs/trades.csv`.
 | `MAX_CONSECUTIVE_LOSSES` | `3` | blocks new entries after this many consecutive losses |
 | `MIN_FREE_MARGIN_PCT` | `100` | rejects entries when free margin is below this percentage of equity |
 | `MAX_SIGNAL_AGE_SECONDS` | `900` | rejects stale or future-dated signals |
+| `MAX_DATA_AGE_SECONDS` | `7200` | rejects stale market data before analysis |
+| `SAFETY_STATE_FILE` | `exness_bot/logs/safety_state.json` | persisted trade/loss guard state |
+| `SIGNAL_LEDGER_FILE` | `exness_bot/logs/signal_ledger.json` | persisted duplicate-signal claims |
+| `MAX_SLIPPAGE_POINTS` | `20` | rejects a proposed slippage budget above this limit |
+| `MIN/MAX_SL_DISTANCE` | `0` / `0` | optional price-distance bounds for stop loss; 0 disables |
+| `MIN/MAX_TP_DISTANCE` | `0` / `0` | optional price-distance bounds for take profit; 0 disables |
 | `CONFIRM_LIVE_STRING` | `""` | must equal `"I ACCEPT THE RISK"` to run on a live account |
 
 ### Market

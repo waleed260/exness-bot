@@ -67,10 +67,17 @@ def _send_with_retry(build_request, tag, symbol_info=None):
             fi += 1
             log.logger.warning(f"{tag}: filling mode rejected, trying {fillings[fi]}")
             continue
+        if result.retcode == mt5.TRADE_RETCODE_TIMEOUT:
+            # A timeout is ambiguous: the broker may have accepted the order
+            # even though the response was lost. Never resend automatically.
+            log.event("order_timeout_ambiguous", tag=tag)
+            log.logger.error(f"{tag} timed out; not retrying to avoid duplicate execution")
+            return result
         if result.retcode in _RETRY_RETCODES and attempt < config.ORDER_RETRIES:
             log.logger.warning(f"{tag} retcode={result.retcode}, retry {attempt}/{config.ORDER_RETRIES}")
             time.sleep(0.5)
             continue
+        log.event("order_rejected", tag=tag, retcode=result.retcode)
         log.logger.error(f"{tag} rejected: retcode={result.retcode} comment={result.comment}")
         return result
     return None

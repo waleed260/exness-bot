@@ -93,6 +93,25 @@ def positions(symbol=None):
     return list(res) if res else []
 
 
+def position_profit(ticket):
+    """Return realized net profit for a closed position, or None if unavailable."""
+    try:
+        deals = mt5.history_deals_get(position=int(ticket))
+    except Exception:
+        return None
+    if not deals:
+        return None
+    total = 0.0
+    found = False
+    for deal in deals:
+        if hasattr(deal, "profit"):
+            total += float(getattr(deal, "profit", 0.0) or 0.0)
+            total += float(getattr(deal, "swap", 0.0) or 0.0)
+            total += float(getattr(deal, "commission", 0.0) or 0.0)
+            found = True
+    return total if found else None
+
+
 def rates(symbol, timeframe, count):
     return mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
 

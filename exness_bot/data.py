@@ -5,6 +5,7 @@ import pandas as pd
 from exness_bot import config
 from exness_bot import mt5_client
 from exness_bot import indicators
+from exness_bot import market_data
 
 # re-exported so existing imports keep working
 snapshot = indicators.snapshot
@@ -20,4 +21,5 @@ def load_frame():
     df = pd.DataFrame(raw)
     df["time"] = pd.to_datetime(df["time"], unit="s")
     df = df.iloc[:-1].reset_index(drop=True)  # drop the forming candle
+    market_data.validate_frame(df, require_fresh=True)
     return indicators.add_indicators(df)
