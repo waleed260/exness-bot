@@ -18,5 +18,10 @@ This matrix reconciles the supplied final specification with the current reposit
 | OOS, walk-forward, Monte Carlo, controls | Not yet evidenced | Produce reproducible reports with frozen data ranges |
 | DEMO telemetry | Not yet evidenced | Run a documented Exness demo campaign |
 | LIVE_SHADOW and G0–G6 gates | Documented | Implement mode and attach release evidence |
+| V2 H1 trend filter | Implemented as pure candidate module | Integrate into shared XAUUSD signal engine and run V1a OOS |
+| V2 ATR volatility filter | Implemented as pure candidate module | Run V1b OOS and stability analysis |
+| V2 breakout-strength filter | Implemented as pure candidate module | Run V1c OOS and record rejected setups |
+| V2 ATR-trailing exit | Implemented as pure candidate module | Run V1d/V2_TRAIL OOS and drawdown comparison |
+| V2 ablation matrix | Documented and unit-tested | Execute V1a–V1d independently before selecting V2 |
 
 The repository should not call the XAUUSD candidate “implemented” or “profitable” until the missing evidence exists. The current honest release state is **HOLD — documentation complete, production strategy implementation and empirical validation pending**.

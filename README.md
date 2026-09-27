@@ -37,6 +37,8 @@ The supplied final specification defines a separate production candidate: XAUUSD
 
 The documentation/specification quality is rated **9.6/10**. This is an engineering-documentation rating, not a profitability rating.
 
+The second reference amendment is implemented as a separate, independently testable candidate layer in [docs/STRATEGY_V2_AMENDMENT.md](docs/STRATEGY_V2_AMENDMENT.md) and `exness_bot/v2_candidate.py`. It does not change the frozen legacy strategy or claim an edge.
+
 ## How to use the bot
 
 You do not need to start with automatic orders. Use these stages:

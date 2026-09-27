@@ -41,7 +41,7 @@ M1/tick + closed M5 data
  order_send -> fill/reconciliation -> durable lifecycle + audit ledger
 ```
 
-Backtest, DEMO, LIVE_SHADOW, and LIVE must call the same profile, strategy, risk, and state-machine core. Only market-data and execution adapters differ. The target flow is not implemented by the legacy `strategy.py` path yet; the traceability matrix records the remaining work.
+Backtest, DEMO, LIVE_SHADOW, and LIVE must call the same profile, strategy, risk, and state-machine core. Only market-data and execution adapters differ. The target flow is not implemented by the legacy `strategy.py` path yet; the traceability matrix records the remaining work. The V2 amendment filters are pure candidate functions in `v2_candidate.py`; they are not enabled in the legacy runner until the shared XAUUSD engine and ablation reports exist.
 
 ## Components
 
