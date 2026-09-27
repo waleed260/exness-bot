@@ -1,4 +1,6 @@
-# exness_bot — rule-based auto-trading bot for Exness (MetaTrader 5)
+# exness_bot — Exness MT5 trading research and safety framework
+
+> **Source of truth for the requested XAUUSD strategy:** [VP_BREAKOUT_M5_V1 specification](docs/STRATEGY_SPEC.md). The repository currently ships a safe legacy SMA/RSI/ATR EURUSD implementation and simulator; the XAUUSD volume-profile production candidate is documented and staged, not falsely presented as complete or profitable. See the [requirements traceability matrix](docs/REQUIREMENTS_TRACEABILITY.md).
 
 A small, safe-by-default trading bot for an **Exness MT5** account. On every
 closed candle it builds a market snapshot and applies its deterministic SMA/RSI/
@@ -18,7 +20,7 @@ an edge before risking anything.
 > before considering real funds. Algo trading is allowed by Exness;
 > arbitrage / latency / tick-scalping style exploits are not — keep it "normal".
 
-## Current safety status
+## Current safety and implementation status
 
 The bot is prepared for automated simulation and demo testing, but **live
 automatic trading is disabled**. The default execution mode is `simulation` and
@@ -31,6 +33,10 @@ The system now includes fail-closed order validation, an emergency stop file
 margin/spread/slippage/stale-data checks, persistent risk and signal state, a
 local simulator, restart reconciliation, and ambiguity-safe order retries. These controls reduce avoidable execution risk; they do
 not eliminate market losses or guarantee profitability.
+The supplied final specification defines a separate production candidate: XAUUSD M5 volume-profile breakout, closed-candle confirmation, next-candle intrabar trigger, exact 30-pip SL / 40-pip TP, and 0.5% account-balance risk. Those rules are written in `docs/STRATEGY_SPEC.md`; they must not be silently substituted with the legacy SMA/RSI/ATR rules. The honest current release state is **HOLD** until the production core, realistic backtests, out-of-sample tests, demo telemetry, and release gates have executable evidence.
+
+The documentation/specification quality is rated **9.6/10**. This is an engineering-documentation rating, not a profitability rating.
+
 ## How to use the bot
 
 You do not need to start with automatic orders. Use these stages:

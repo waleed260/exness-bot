@@ -23,6 +23,26 @@ MT5 closed candles
                     closure + trade log + recovery
 ```
 
+## Target production topology: VP_BREAKOUT_M5_V1
+
+```text
+M1/tick + closed M5 data
+          |
+          v
+  profile snapshot (03:00 UTC)
+          |
+          v
+ closed breakout -> persisted pending setup -> next-candle tick trigger
+          |
+          v
+ fresh quote -> broker-aware 0.5% sizing -> constraints -> order_check
+          |
+          v
+ order_send -> fill/reconciliation -> durable lifecycle + audit ledger
+```
+
+Backtest, DEMO, LIVE_SHADOW, and LIVE must call the same profile, strategy, risk, and state-machine core. Only market-data and execution adapters differ. The target flow is not implemented by the legacy `strategy.py` path yet; the traceability matrix records the remaining work.
+
 ## Components
 
 - `data.py` / `market_data.py`: fetch rates, remove the forming candle, and reject stale, malformed, non-finite, duplicated, or non-monotonic OHLC data before analysis.

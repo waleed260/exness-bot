@@ -2,6 +2,8 @@
 
 **Rule-based auto-trading bot for Exness (MetaTrader 5)**
 
+> This guide explains the current legacy EURUSD SMA/RSI/ATR bot and its safe simulator. For the requested XAUUSD production candidate, use [STRATEGY_SPEC.md](STRATEGY_SPEC.md) and [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). Do not enable real trading based on this guide; the production candidate remains HOLD until its gates have evidence.
+
 Version 1.2 · Author: Waleed Hassan · Runs on Windows 7, 10 and 11
 
 ---
