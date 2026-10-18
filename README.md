@@ -78,7 +78,7 @@ See `docs/GUIDE.md` for the full step-by-step operator guide.
 
 ## Tests
 
-61 tests covering SMC strategy, SMC backtester, VP breakout, V2 filters, safety, simulator, and execution.
+84 tests covering SMC strategy (with regime/news/volume filters), SMC backtester, VP breakout, V2 filters, safety, simulator, and execution.
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v

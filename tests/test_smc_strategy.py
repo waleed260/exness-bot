@@ -145,6 +145,45 @@ class TestSMCStrategy(unittest.TestCase):
         ts = pd.Timestamp("2026-01-05 03:00:00")
         self.assertFalse(self.strategy._in_session(ts))
 
+    # ---- regime filter ----
+
+    def test_regime_filter_ranging_hold(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        with patch.object(self.strategy, '_is_ranging', return_value=True):
+            result = self.strategy.decide(m5, m15)
+        self.assertEqual(result["action"], "hold")
+        self.assertIn("ranging", result["reason"])
+
+    def test_regime_filter_disabled_passes(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        with patch.object(config, 'SMC_USE_REGIME_FILTER', False), \
+             patch.object(self.strategy, '_is_ranging', return_value=True):
+            result = self.strategy.decide(m5, m15)
+        self.assertNotIn("ranging", result.get("reason", ""))
+
+    # ---- news / volatility filter ----
+
+    def test_volatility_spike_hold(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        with patch.object(self.strategy, '_volatility_spike', return_value=True):
+            result = self.strategy.decide(m5, m15)
+        self.assertEqual(result["action"], "hold")
+        self.assertIn("volatility", result["reason"])
+
+    # ---- Asian session ----
+
+    def test_asian_session_enabled(self):
+        with patch.object(config, 'SMC_USE_ASIAN_SESSION', True):
+            ts = pd.Timestamp("2026-01-05 02:00:00")
+            self.assertTrue(self.strategy._in_session(ts))
+
+    def test_asian_session_disabled(self):
+        ts = pd.Timestamp("2026-01-05 02:00:00")
+        self.assertFalse(self.strategy._in_session(ts))
+
 
 class TestSMCHelpers(unittest.TestCase):
 
@@ -180,6 +219,50 @@ class TestSMCHelpers(unittest.TestCase):
     def test_equilibrium_none_when_no_swings(self):
         s = SMCStrategy()
         self.assertIsNone(s._equilibrium({"h": [], "l": []}))
+
+    # ---- ADX / regime ----
+
+    def test_adx_computation(self):
+        s = SMCStrategy()
+        m5 = _make_m5(n=100)
+        m5_clean = s._clean(m5)
+        adx = s._adx(m5_clean)
+        self.assertEqual(len(adx), len(m5_clean))
+        self.assertTrue(pd.notna(adx.iloc[-1]))
+
+    def test_is_ranging_returns_bool(self):
+        s = SMCStrategy()
+        m5 = _make_m5(n=100)
+        m5_clean = s._clean(m5)
+        result = s._is_ranging(m5_clean)
+        self.assertIsInstance(result, bool)
+
+    # ---- volatility spike ----
+
+    def test_volatility_spike_normal_data(self):
+        s = SMCStrategy()
+        m5 = _make_m5(n=100)
+        m5_clean = s._clean(m5)
+        atr_series = s._atr(m5_clean)
+        atr = atr_series.iloc[-1]
+        self.assertFalse(s._volatility_spike(atr_series, atr))
+
+    # ---- volume ----
+
+    def test_volume_score_with_tick_volume(self):
+        s = SMCStrategy()
+        m5 = _make_m5(n=100)
+        m5["tick_volume"] = [100] * 99 + [200]
+        m5_clean = s._clean(m5)
+        score = s._volume_score(m5_clean)
+        self.assertEqual(score, 1)
+
+    def test_volume_score_no_volume_col(self):
+        s = SMCStrategy()
+        m5 = _make_m5(n=100)
+        m5_clean = s._clean(m5)
+        score = s._volume_score(m5_clean)
+        self.assertEqual(score, 0)
 
 
 if __name__ == "__main__":

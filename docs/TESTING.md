@@ -4,13 +4,16 @@
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-## Test Suite — 61 tests
+## Test Suite — 84 tests
 
-### SMC Strategy (`tests/test_smc_strategy.py` — 20 tests)
+### SMC Strategy (`tests/test_smc_strategy.py` — 30 tests)
 - Insufficient candles, session filter, cooldown, spread filter
 - M15 bullish/bearish bias detection
 - Swing detection, ATR computation, FVG edge cases, equilibrium math
-- VP confluence, session boundaries (London/NY)
+- VP confluence, session boundaries (London/NY/Asian)
+- Regime filter (ADX-based ranging market detection)
+- News/volatility spike filter
+- Volume confirmation scoring
 - Decision contract: required keys, confidence bounds, SL/TP presence
 
 ### SMC Backtester (`tests/test_smc_backtest.py` — 7 tests)

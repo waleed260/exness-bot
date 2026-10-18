@@ -113,3 +113,11 @@ SMC_USE_H1_TREND = True
 SMC_SPREAD_FILTER_POINTS = 40
 SMC_SESSION_LONDON = (7, 11.5)
 SMC_SESSION_NY = (13, 17.5)
+SMC_SESSION_ASIAN = (23, 5)       # Tokyo session (wraps midnight)
+SMC_USE_ASIAN_SESSION = False     # enable to trade Asian session setups
+SMC_USE_VOLUME_CONFIRM = True     # above-average volume adds +1 score
+SMC_USE_REGIME_FILTER = True      # hold in ranging markets (ADX-based)
+SMC_ADX_PERIOD = 14
+SMC_ADX_RANGE_THRESHOLD = 20     # ADX below this = ranging market, hold
+SMC_USE_NEWS_FILTER = True        # hold on abnormal volatility spikes (news proxy)
+SMC_NEWS_VOLATILITY_MULT = 2.5   # current ATR / avg ATR above this = spike

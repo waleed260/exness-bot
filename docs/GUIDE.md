@@ -125,7 +125,12 @@ The SMC engine runs every closed M5 candle during London/NY sessions:
 9. **VP Confluence** — Entry near VAL/POC (buys) or VAH/POC (sells) from volume profile.
 10. **H1 EMA Trend** — EMA50 > EMA200 on H1 confirms bullish bias (triple timeframe).
 
-**Scoring**: Each condition has weight (bias=2, sweep=2, BOS=2, OB=2, others=1). Minimum score: 9/14. Mandatory: bias + sweep + BOS + OB must all be true.
+**Scoring**: Each condition has weight (bias=2, sweep=2, BOS=2, OB=2, others=1). Minimum score: 9/15. Mandatory: bias + sweep + BOS + OB must all be true.
+
+**Filters (gate before scoring)**:
+- **Regime filter (ADX)**: ADX < 20 = ranging market, hold — BOS signals unreliable in ranges
+- **News filter (volatility spike)**: If current ATR > 2.5x recent average, hold — likely news event
+- **Session filter**: London (7-11:30) + NY (13-17:30) UTC by default; Asian session (23-05) optional
 
 **Risk management**:
 - SL at Order Block / liquidity level + ATR buffer
@@ -148,7 +153,7 @@ Level-2 OHLC with stop-first conservative exits, spread/commission/swap costs.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Current: **61 tests** covering SMC strategy, SMC backtester, VP breakout, V2 candidate filters, safety/simulator, and execution.
+Current: **84 tests** covering SMC strategy (with regime/news/volume filters), SMC backtester, VP breakout, V2 candidate filters, safety/simulator, and execution.
 
 ## 9. Safety boundary
 

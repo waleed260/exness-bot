@@ -14,12 +14,15 @@ MT5 closed M5 candle detected
             |
             v
    strategy_dispatch.decide() -> smc_strategy.decide()
+   ├── Gate: Regime filter (ADX < 20 = ranging → hold)
+   ├── Gate: News filter (ATR spike > 2.5x avg → hold)
    ├── M15 bias (HH/HL or LH/LL)
    ├── Liquidity sweep + BOS + Order Block + FVG
    ├── Displacement + Price Action + Premium/Discount
    ├── VP Confluence (near VAL/POC or VAH/POC)
    ├── H1 EMA Trend (EMA50 vs EMA200)
-   └── Score >= 9/14 + 4 mandatory conditions
+   ├── Volume confirmation (tick_volume > 1.2x avg)
+   └── Score >= 9/15 + 4 mandatory conditions
             |
             v
    {action, entry, sl, tp1, tp2, confidence}
@@ -56,7 +59,7 @@ M5 candles -> volume_profile (03:00 UTC sessions) -> VAH=GREEN, VAL=RED
 
 | Module | Purpose |
 |---|---|
-| `smc_strategy.py` | SMC engine: swings, BOS, OB, FVG, VP, H1 trend, scoring |
+| `smc_strategy.py` | SMC engine: swings, BOS, OB, FVG, VP, H1 trend, ADX regime, news filter, volume, scoring |
 | `strategy_dispatch.py` | Routes to active strategy via `config.ACTIVE_STRATEGY` |
 | `data.py` | Single-frame and multi-frame (M5+M15+H1+VP) data loading |
 | `runner.py` | Main loop: candle detection, strategy dispatch, partial close/BE/trail |

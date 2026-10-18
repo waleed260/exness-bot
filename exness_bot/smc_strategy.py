@@ -2,7 +2,8 @@
 
 Multi-timeframe: M5 entries, M15 structure bias, optional H1 EMA trend.
 Confluences: liquidity sweep + BOS + order block + FVG + displacement +
-price action + premium/discount + VP levels + H1 trend.
+price action + premium/discount + VP levels + H1 trend + volume.
+Filters: session, regime (ADX), volatility spike (news proxy).
 """
 
 from datetime import time
@@ -10,6 +11,8 @@ import pandas as pd
 
 from exness_bot import config
 from exness_bot.indicators import h1_ema_trend
+
+_MAX_SCORE = 15
 
 
 class SMCStrategy:
@@ -33,8 +36,16 @@ class SMCStrategy:
         if spread_points is not None and spread_points > config.SMC_SPREAD_FILTER_POINTS:
             return self._hold("spread too wide")
 
+        atr_series = self._atr(m5)
+        atr = atr_series.iloc[-1]
+
+        if config.SMC_USE_REGIME_FILTER and self._is_ranging(m5):
+            return self._hold("ranging market — SMC signals unreliable")
+
+        if config.SMC_USE_NEWS_FILTER and self._volatility_spike(atr_series, atr):
+            return self._hold("abnormal volatility — possible news event")
+
         bias = self._m15_bias(m15)
-        atr = self._atr(m5).iloc[-1]
         if bias == 0:
             return self._hold("M15 structure unclear")
 
@@ -66,15 +77,17 @@ class SMCStrategy:
         vp_buy = self._vp_confluence(price, vp_snapshot, atr, is_buy=True)
         vp_sell = self._vp_confluence(price, vp_snapshot, atr, is_buy=False)
 
+        vol = self._volume_score(m5)
+
         bscore = (
             2 * (bias > 0) + 2 * bs + 2 * bb + 2 * (bo is not None)
             + bdisp + bf + disc + bpa
-            + (h1_bias > 0) + vp_buy
+            + (h1_bias > 0) + vp_buy + vol
         )
         sscore = (
             2 * (bias < 0) + 2 * ss + 2 * sb + 2 * (so is not None)
             + sdisp + sf + prem + spa
-            + (h1_bias < 0) + vp_sell
+            + (h1_bias < 0) + vp_sell + vol
         )
 
         bc = bias > 0 and bs and bb and bo is not None and bscore >= config.SMC_MIN_SCORE
@@ -119,6 +132,7 @@ class SMCStrategy:
                 "price action" if bpa else "",
                 "H1 bullish" if h1_bias > 0 else "",
                 "VP confluence" if vp_buy else "",
+                "volume confirmed" if vol else "",
             ]
         else:
             parts = [
@@ -132,13 +146,14 @@ class SMCStrategy:
                 "price action" if spa else "",
                 "H1 bearish" if h1_bias < 0 else "",
                 "VP confluence" if vp_sell else "",
+                "volume confirmed" if vol else "",
             ]
 
         reason = " | ".join(p for p in parts if p)
 
         return {
             "action": action,
-            "confidence": round(min(1.0, score / 14), 2),
+            "confidence": round(min(1.0, score / _MAX_SCORE), 2),
             "score": score,
             "reason": reason,
             "entry": entry,
@@ -155,7 +170,7 @@ class SMCStrategy:
     def _hold(self, reason, score=0):
         return {
             "action": "hold",
-            "confidence": round(min(1.0, score / 14), 2),
+            "confidence": round(min(1.0, score / _MAX_SCORE), 2),
             "score": score,
             "reason": reason,
         }
@@ -252,10 +267,18 @@ class SMCStrategy:
 
     def _in_session(self, ts):
         t = ts.timetz().replace(tzinfo=None) if hasattr(ts, "timetz") else ts
-        lon_s, lon_e = config.SMC_SESSION_LONDON
-        ny_s, ny_e = config.SMC_SESSION_NY
         h = t.hour + t.minute / 60.0
-        return lon_s <= h <= lon_e or ny_s <= h <= ny_e
+        sessions = [config.SMC_SESSION_LONDON, config.SMC_SESSION_NY]
+        if config.SMC_USE_ASIAN_SESSION:
+            sessions.append(config.SMC_SESSION_ASIAN)
+        for s, e in sessions:
+            if s <= e:
+                if s <= h <= e:
+                    return True
+            else:
+                if h >= s or h <= e:
+                    return True
+        return False
 
     def _vp_confluence(self, price, vp_snapshot, atr, is_buy):
         if vp_snapshot is None or not config.SMC_USE_VP_CONFLUENCE:
@@ -264,6 +287,57 @@ class SMCStrategy:
         if is_buy:
             return abs(price - vp_snapshot.val) < proximity or abs(price - vp_snapshot.poc) < proximity
         return abs(price - vp_snapshot.vah) < proximity or abs(price - vp_snapshot.poc) < proximity
+
+    def _adx(self, d, period=None):
+        if period is None:
+            period = config.SMC_ADX_PERIOD
+        high, low, close = d.high, d.low, d.close
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+        tr = pd.concat([
+            high - low, (high - close.shift()).abs(), (low - close.shift()).abs()
+        ], axis=1).max(axis=1)
+        atr_r = tr.rolling(period).mean()
+        safe = atr_r.replace(0, 1e-9)
+        plus_di = 100 * plus_dm.rolling(period).mean() / safe
+        minus_di = 100 * minus_dm.rolling(period).mean() / safe
+        denom = (plus_di + minus_di).replace(0, 1e-9)
+        dx = 100 * (plus_di - minus_di).abs() / denom
+        return dx.rolling(period).mean()
+
+    def _is_ranging(self, d):
+        adx = self._adx(d)
+        val = adx.iloc[-1]
+        if pd.isna(val):
+            return False
+        return bool(val < config.SMC_ADX_RANGE_THRESHOLD)
+
+    def _volatility_spike(self, atr_series, current_atr):
+        if pd.isna(current_atr):
+            return False
+        recent = atr_series.iloc[-51:-1]
+        avg = recent.mean()
+        if avg <= 0 or pd.isna(avg):
+            return False
+        return current_atr / avg > config.SMC_NEWS_VOLATILITY_MULT
+
+    def _volume_score(self, d):
+        if not config.SMC_USE_VOLUME_CONFIRM:
+            return 0
+        vol_col = None
+        if "tick_volume" in d.columns:
+            vol_col = "tick_volume"
+        elif "volume" in d.columns:
+            vol_col = "volume"
+        if vol_col is None:
+            return 0
+        recent = d[vol_col].iloc[-20:]
+        avg = recent.mean()
+        if avg <= 0:
+            return 0
+        return 1 if d[vol_col].iloc[-1] > avg * 1.2 else 0
 
     def _reason(self, bias, bs, ss, bb, sb, bo, so, bsco, ssco):
         if bias > 0:
