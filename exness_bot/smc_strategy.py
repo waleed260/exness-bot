@@ -2,24 +2,27 @@
 
 Multi-timeframe: M5 entries, M15 structure bias, optional H1 EMA trend.
 Confluences: liquidity sweep + BOS + order block + FVG + displacement +
-price action + premium/discount + VP levels + H1 trend + volume.
-Filters: session, regime (ADX), volatility spike (news proxy).
+price action + premium/discount + VP levels + H1 trend + volume (graduated).
+Filters: session killzones + DST, regime (ADX+BB+ATR multi-indicator),
+volatility spike, economic calendar news blackout.
 """
 
-from datetime import time
+from datetime import datetime, date, timedelta, timezone
 import pandas as pd
 
 from exness_bot import config
 from exness_bot.indicators import h1_ema_trend
+from exness_bot import regime as regime_mod
+from exness_bot import news_calendar
 
-_MAX_SCORE = 15
+_MAX_SCORE = 17
 
 
 class SMCStrategy:
     def __init__(self):
         self.last_trade = None
 
-    def decide(self, m5, m15, h1=None, vp_snapshot=None, spread_points=None):
+    def decide(self, m5, m15, h1=None, vp_snapshot=None, spread_points=None, news_events=None):
         m5 = self._clean(m5)
         m15 = self._clean(m15)
         if len(m5) < 80 or len(m15) < 40:
@@ -36,10 +39,20 @@ class SMCStrategy:
         if spread_points is not None and spread_points > config.SMC_SPREAD_FILTER_POINTS:
             return self._hold("spread too wide")
 
+        if news_events:
+            nearest = min(news_events, key=lambda e: abs(e.get("minutes_until", 999)))
+            mins = nearest.get("minutes_until", 999)
+            name = nearest.get("name", "event")
+            if mins >= 0:
+                return self._hold(f"news blackout: {name} in {mins:.0f}min")
+            else:
+                return self._hold(f"post-news cooldown: {name} ended {abs(mins):.0f}min ago")
+
         atr_series = self._atr(m5)
         atr = atr_series.iloc[-1]
 
-        if config.SMC_USE_REGIME_FILTER and self._is_ranging(m5):
+        reg = regime_mod.detect_regime(m5)
+        if config.SMC_USE_REGIME_FILTER and reg == regime_mod.RANGING:
             return self._hold("ranging market — SMC signals unreliable")
 
         if config.SMC_USE_NEWS_FILTER and self._volatility_spike(atr_series, atr):
@@ -77,17 +90,20 @@ class SMCStrategy:
         vp_buy = self._vp_confluence(price, vp_snapshot, atr, is_buy=True)
         vp_sell = self._vp_confluence(price, vp_snapshot, atr, is_buy=False)
 
-        vol = self._volume_score(m5)
+        vol_buy = self._volume_score(m5, bo, bs, is_buy=True)
+        vol_sell = self._volume_score(m5, so, ss, is_buy=False)
+
+        sq = self._session_quality(last_time)
 
         bscore = (
             2 * (bias > 0) + 2 * bs + 2 * bb + 2 * (bo is not None)
             + bdisp + bf + disc + bpa
-            + (h1_bias > 0) + vp_buy + vol
+            + (h1_bias > 0) + vp_buy + vol_buy + sq
         )
         sscore = (
             2 * (bias < 0) + 2 * ss + 2 * sb + 2 * (so is not None)
             + sdisp + sf + prem + spa
-            + (h1_bias < 0) + vp_sell + vol
+            + (h1_bias < 0) + vp_sell + vol_sell + sq
         )
 
         bc = bias > 0 and bs and bb and bo is not None and bscore >= config.SMC_MIN_SCORE
@@ -118,6 +134,7 @@ class SMCStrategy:
 
         self.last_trade = i
         score = max(bscore, sscore)
+        vol = vol_buy if action == "buy" else vol_sell
 
         parts = []
         if action == "buy":
@@ -132,7 +149,8 @@ class SMCStrategy:
                 "price action" if bpa else "",
                 "H1 bullish" if h1_bias > 0 else "",
                 "VP confluence" if vp_buy else "",
-                "volume confirmed" if vol else "",
+                f"volume {vol}/2" if vol else "",
+                "killzone" if sq else "",
             ]
         else:
             parts = [
@@ -146,7 +164,8 @@ class SMCStrategy:
                 "price action" if spa else "",
                 "H1 bearish" if h1_bias < 0 else "",
                 "VP confluence" if vp_sell else "",
-                "volume confirmed" if vol else "",
+                f"volume {vol}/2" if vol else "",
+                "killzone" if sq else "",
             ]
 
         reason = " | ".join(p for p in parts if p)
@@ -230,13 +249,19 @@ class SMCStrategy:
 
     def _order_block(self, d, atr, bull):
         start = max(0, len(d) - 12)
+        vol_col = self._vol_col(d)
+        vol_avg = d[vol_col].iloc[-20:].mean() if vol_col else 0
+
         for i in range(len(d) - 2, start - 1, -1):
             c = d.iloc[i]
             if (c.close < c.open) if bull else (c.close > c.open):
                 f = d.iloc[i + 1 : min(i + 4, len(d))]
                 move = (f.high.max() - c.high) if bull else (c.low - f.low.min())
                 if move >= atr * 0.8:
-                    return {"high": float(c.high), "low": float(c.low)}
+                    vol_ok = True
+                    if vol_col and vol_avg > 0:
+                        vol_ok = c[vol_col] > vol_avg * config.SMC_VOLUME_OB_MULTIPLIER
+                    return {"high": float(c.high), "low": float(c.low), "vol_confirmed": vol_ok}
         return None
 
     def _fvg(self, d, bull):
@@ -265,12 +290,68 @@ class SMCStrategy:
         lo = s["l"][-1][1]
         return (hi + lo) / 2 if hi > lo else None
 
+    # ---- DST helpers ----
+
+    def _last_sunday(self, year, month):
+        """Return the last Sunday of the given month."""
+        last_day = 31
+        while last_day > 0:
+            try:
+                d = date(year, month, last_day)
+                if d.weekday() == 6:
+                    return d
+            except ValueError:
+                pass
+            last_day -= 1
+        return date(year, month, 1)
+
+    def _nth_sunday(self, year, month, n):
+        """Return the nth Sunday of the given month."""
+        import calendar as cal_mod
+        weeks = cal_mod.monthcalendar(year, month)
+        count = 0
+        for week in weeks:
+            if week[cal_mod.SUNDAY] != 0:
+                count += 1
+                if count == n:
+                    return date(year, month, week[cal_mod.SUNDAY])
+        return date(year, month, 1)
+
+    def _dst_offsets(self, ts):
+        """Return (london_offset, ny_offset) in hours for DST adjustment."""
+        if not config.SMC_USE_DST_ADJUST:
+            return 0, 0
+        if not hasattr(ts, "year"):
+            return 0, 0
+        d = ts.date() if hasattr(ts, "date") else ts
+        y = d.year
+
+        uk_start = self._last_sunday(y, 3)
+        uk_end = self._last_sunday(y, 10)
+        london_dst = 1 if uk_start <= d < uk_end else 0
+
+        us_start = self._nth_sunday(y, 3, 2)
+        us_end = self._nth_sunday(y, 11, 1)
+        ny_dst = 1 if us_start <= d < us_end else 0
+
+        return london_dst, ny_dst
+
     def _in_session(self, ts):
         t = ts.timetz().replace(tzinfo=None) if hasattr(ts, "timetz") else ts
         h = t.hour + t.minute / 60.0
-        sessions = [config.SMC_SESSION_LONDON, config.SMC_SESSION_NY]
+        lon_off, ny_off = self._dst_offsets(ts)
+
+        lon_s, lon_e = config.SMC_SESSION_LONDON
+        lon_s -= lon_off
+        lon_e -= lon_off
+        ny_s, ny_e = config.SMC_SESSION_NY
+        ny_s -= ny_off
+        ny_e -= ny_off
+
+        sessions = [(lon_s, lon_e), (ny_s, ny_e)]
         if config.SMC_USE_ASIAN_SESSION:
             sessions.append(config.SMC_SESSION_ASIAN)
+
         for s, e in sessions:
             if s <= e:
                 if s <= h <= e:
@@ -280,6 +361,31 @@ class SMCStrategy:
                     return True
         return False
 
+    def _session_quality(self, ts):
+        """Return 1 if in killzone or session overlap, 0 otherwise."""
+        if not config.SMC_USE_SESSION_QUALITY:
+            return 0
+        t = ts.timetz().replace(tzinfo=None) if hasattr(ts, "timetz") else ts
+        h = t.hour + t.minute / 60.0
+        lon_off, ny_off = self._dst_offsets(ts)
+
+        killzones = [
+            (config.SMC_KILLZONE_LONDON[0] - lon_off, config.SMC_KILLZONE_LONDON[1] - lon_off),
+            (config.SMC_KILLZONE_NY[0] - ny_off, config.SMC_KILLZONE_NY[1] - ny_off),
+            (config.SMC_KILLZONE_OVERLAP[0] - ny_off, config.SMC_KILLZONE_OVERLAP[1] - lon_off),
+        ]
+        if config.SMC_USE_ASIAN_SESSION:
+            killzones.append(config.SMC_KILLZONE_ASIAN)
+
+        for s, e in killzones:
+            if s <= e:
+                if s <= h <= e:
+                    return 1
+            else:
+                if h >= s or h <= e:
+                    return 1
+        return 0
+
     def _vp_confluence(self, price, vp_snapshot, atr, is_buy):
         if vp_snapshot is None or not config.SMC_USE_VP_CONFLUENCE:
             return False
@@ -288,31 +394,52 @@ class SMCStrategy:
             return abs(price - vp_snapshot.val) < proximity or abs(price - vp_snapshot.poc) < proximity
         return abs(price - vp_snapshot.vah) < proximity or abs(price - vp_snapshot.poc) < proximity
 
-    def _adx(self, d, period=None):
-        if period is None:
-            period = config.SMC_ADX_PERIOD
-        high, low, close = d.high, d.low, d.close
-        plus_dm = high.diff()
-        minus_dm = -low.diff()
-        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
-        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
-        tr = pd.concat([
-            high - low, (high - close.shift()).abs(), (low - close.shift()).abs()
-        ], axis=1).max(axis=1)
-        atr_r = tr.rolling(period).mean()
-        safe = atr_r.replace(0, 1e-9)
-        plus_di = 100 * plus_dm.rolling(period).mean() / safe
-        minus_di = 100 * minus_dm.rolling(period).mean() / safe
-        denom = (plus_di + minus_di).replace(0, 1e-9)
-        dx = 100 * (plus_di - minus_di).abs() / denom
-        return dx.rolling(period).mean()
+    # ---- volume helpers ----
 
-    def _is_ranging(self, d):
-        adx = self._adx(d)
-        val = adx.iloc[-1]
-        if pd.isna(val):
+    def _vol_col(self, d):
+        if "tick_volume" in d.columns:
+            return "tick_volume"
+        if "volume" in d.columns:
+            return "volume"
+        return None
+
+    def _volume_delta(self, d, is_buy):
+        """Volume delta: sum of volume on up-candles minus down-candles. Aligned = positive signal."""
+        vol_col = self._vol_col(d)
+        if vol_col is None:
             return False
-        return bool(val < config.SMC_ADX_RANGE_THRESHOLD)
+        lookback = config.SMC_VOLUME_DELTA_LOOKBACK
+        recent = d.iloc[-lookback:]
+        up_vol = recent.loc[recent.close > recent.open, vol_col].sum()
+        down_vol = recent.loc[recent.close < recent.open, vol_col].sum()
+        delta = up_vol - down_vol
+        if is_buy:
+            return bool(delta > 0)
+        return bool(delta < 0)
+
+    def _volume_score(self, d, ob, sweep_hit, is_buy):
+        """Graduated volume score: 0/1/2."""
+        if not config.SMC_USE_VOLUME_CONFIRM:
+            return 0
+        vol_col = self._vol_col(d)
+        if vol_col is None:
+            return 0
+
+        score = 0
+        avg = d[vol_col].iloc[-20:].mean()
+        if avg <= 0:
+            return 0
+
+        entry_vol_ok = d[vol_col].iloc[-1] > avg * 1.2
+        ob_vol_ok = ob is not None and ob.get("vol_confirmed", False)
+        delta_ok = self._volume_delta(d, is_buy)
+
+        if entry_vol_ok or ob_vol_ok:
+            score = 1
+        if (entry_vol_ok or ob_vol_ok) and delta_ok:
+            score = 2
+
+        return score
 
     def _volatility_spike(self, atr_series, current_atr):
         if pd.isna(current_atr):
@@ -322,22 +449,6 @@ class SMCStrategy:
         if avg <= 0 or pd.isna(avg):
             return False
         return current_atr / avg > config.SMC_NEWS_VOLATILITY_MULT
-
-    def _volume_score(self, d):
-        if not config.SMC_USE_VOLUME_CONFIRM:
-            return 0
-        vol_col = None
-        if "tick_volume" in d.columns:
-            vol_col = "tick_volume"
-        elif "volume" in d.columns:
-            vol_col = "volume"
-        if vol_col is None:
-            return 0
-        recent = d[vol_col].iloc[-20:]
-        avg = recent.mean()
-        if avg <= 0:
-            return 0
-        return 1 if d[vol_col].iloc[-1] > avg * 1.2 else 0
 
     def _reason(self, bias, bs, ss, bb, sb, bo, so, bsco, ssco):
         if bias > 0:

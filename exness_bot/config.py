@@ -121,3 +121,40 @@ SMC_ADX_PERIOD = 14
 SMC_ADX_RANGE_THRESHOLD = 20     # ADX below this = ranging market, hold
 SMC_USE_NEWS_FILTER = True        # hold on abnormal volatility spikes (news proxy)
 SMC_NEWS_VOLATILITY_MULT = 2.5   # current ATR / avg ATR above this = spike
+
+# ---- Volume (graduated 0/1/2) ----
+SMC_VOLUME_DELTA_LOOKBACK = 20
+SMC_VOLUME_OB_MULTIPLIER = 1.0   # OB candle volume must exceed avg * this
+
+# ---- Session quality / killzones ----
+SMC_KILLZONE_LONDON = (7, 9)
+SMC_KILLZONE_NY = (13, 15)
+SMC_KILLZONE_OVERLAP = (13, 16)
+SMC_KILLZONE_ASIAN = (0, 3)
+SMC_USE_DST_ADJUST = True
+SMC_USE_SESSION_QUALITY = True
+
+# ---- News calendar ----
+SMC_NEWS_BLACKOUT_BEFORE_MIN = 30
+SMC_NEWS_BLACKOUT_AFTER_MIN = 15
+SMC_NEWS_USE_MT5_CALENDAR = True
+SMC_NEWS_USE_STATIC_SCHEDULE = True
+SMC_NEWS_HIGH_IMPACT_ONLY = True
+SMC_FOMC_DATES_2026 = [
+    "2026-01-28", "2026-03-18", "2026-05-06", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-11-04", "2026-12-16",
+]
+
+# ---- Regime detection (multi-indicator) ----
+SMC_REGIME_BB_PERIOD = 20
+SMC_REGIME_BB_STD = 2.0
+SMC_REGIME_BB_SQUEEZE_PCT = 20
+SMC_REGIME_ATR_FAST = 7
+SMC_REGIME_ATR_SLOW = 50
+SMC_REGIME_ATR_COMPRESS_RATIO = 0.75
+SMC_REGIME_MIN_RANGING_SIGNALS = 2
+
+# ---- Backtest validation ----
+SMC_BT_WALK_FORWARD_WINDOWS = 6
+SMC_BT_SENSITIVITY_PCT = [10, 20]
+SMC_BT_MONTE_CARLO_RUNS = 1000

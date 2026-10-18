@@ -64,4 +64,9 @@ def load_multi_frame():
     tick = mt5_client.tick()
     result["spread_points"] = mt5_client.spread_points() if tick else None
 
+    from exness_bot import news_calendar
+    result["news_events"] = news_calendar.get_upcoming_events(
+        datetime.now(timezone.utc)
+    )
+
     return result

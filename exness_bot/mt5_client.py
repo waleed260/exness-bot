@@ -116,6 +116,15 @@ def rates(symbol, timeframe, count):
     return mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
 
 
+def calendar_get(date_from, date_to):
+    """Fetch economic calendar events from MT5. Returns list or empty list."""
+    try:
+        result = mt5.calendar_get(date_from, date_to)
+        return list(result) if result else []
+    except Exception:
+        return []
+
+
 def tick(symbol=None):
     return mt5.symbol_info_tick(symbol or resolved_symbol())
 

@@ -18,6 +18,7 @@ def decide(data, position_side):
             h1=data.get("h1"),
             vp_snapshot=data.get("vp_snapshot"),
             spread_points=data.get("spread_points"),
+            news_events=data.get("news_events"),
         )
 
     from exness_bot import strategy

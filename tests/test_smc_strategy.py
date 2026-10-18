@@ -1,7 +1,7 @@
 """Unit tests for the enhanced SMC XAUUSD M5 strategy."""
 
 import unittest
-from datetime import datetime, time, timezone
+from datetime import datetime, date, time, timezone
 from unittest.mock import patch
 
 import pandas as pd
@@ -121,7 +121,6 @@ class TestSMCStrategy(unittest.TestCase):
         self.assertEqual(result["reason"], "test reason")
 
     def test_entry_returns_sl_tp_keys(self):
-        """If the strategy returns buy/sell it must include sl/tp1/tp2/entry."""
         m5 = _make_m5(n=100)
         m15 = _make_m15(n=60)
         result = self.strategy.decide(m5, m15)
@@ -150,7 +149,7 @@ class TestSMCStrategy(unittest.TestCase):
     def test_regime_filter_ranging_hold(self):
         m5 = _make_m5(n=100)
         m15 = _make_m15(n=60)
-        with patch.object(self.strategy, '_is_ranging', return_value=True):
+        with patch("exness_bot.smc_strategy.regime_mod.detect_regime", return_value="RANGING"):
             result = self.strategy.decide(m5, m15)
         self.assertEqual(result["action"], "hold")
         self.assertIn("ranging", result["reason"])
@@ -159,7 +158,7 @@ class TestSMCStrategy(unittest.TestCase):
         m5 = _make_m5(n=100)
         m15 = _make_m15(n=60)
         with patch.object(config, 'SMC_USE_REGIME_FILTER', False), \
-             patch.object(self.strategy, '_is_ranging', return_value=True):
+             patch("exness_bot.smc_strategy.regime_mod.detect_regime", return_value="RANGING"):
             result = self.strategy.decide(m5, m15)
         self.assertNotIn("ranging", result.get("reason", ""))
 
@@ -172,6 +171,29 @@ class TestSMCStrategy(unittest.TestCase):
             result = self.strategy.decide(m5, m15)
         self.assertEqual(result["action"], "hold")
         self.assertIn("volatility", result["reason"])
+
+    def test_news_blackout_hold(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        events = [{"name": "NFP", "minutes_until": 15, "time": datetime(2026, 1, 5, 13, 30, tzinfo=timezone.utc), "impact": "HIGH"}]
+        result = self.strategy.decide(m5, m15, news_events=events)
+        self.assertEqual(result["action"], "hold")
+        self.assertIn("news blackout", result["reason"])
+        self.assertIn("NFP", result["reason"])
+
+    def test_post_news_cooldown_hold(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        events = [{"name": "CPI", "minutes_until": -5, "time": datetime(2026, 1, 5, 13, 30, tzinfo=timezone.utc), "impact": "HIGH"}]
+        result = self.strategy.decide(m5, m15, news_events=events)
+        self.assertEqual(result["action"], "hold")
+        self.assertIn("post-news cooldown", result["reason"])
+
+    def test_empty_news_events_no_hold(self):
+        m5 = _make_m5(n=100)
+        m15 = _make_m15(n=60)
+        result = self.strategy.decide(m5, m15, news_events=[])
+        self.assertNotIn("news", result.get("reason", ""))
 
     # ---- Asian session ----
 
@@ -226,16 +248,18 @@ class TestSMCHelpers(unittest.TestCase):
         s = SMCStrategy()
         m5 = _make_m5(n=100)
         m5_clean = s._clean(m5)
-        adx = s._adx(m5_clean)
-        self.assertEqual(len(adx), len(m5_clean))
-        self.assertTrue(pd.notna(adx.iloc[-1]))
+        from exness_bot import regime
+        adx_val, _, _ = regime.adx(m5_clean)
+        self.assertEqual(len(adx_val), len(m5_clean))
+        self.assertTrue(pd.notna(adx_val.iloc[-1]))
 
-    def test_is_ranging_returns_bool(self):
-        s = SMCStrategy()
+    def test_regime_detect_returns_valid(self):
+        from exness_bot import regime
         m5 = _make_m5(n=100)
+        s = SMCStrategy()
         m5_clean = s._clean(m5)
-        result = s._is_ranging(m5_clean)
-        self.assertIsInstance(result, bool)
+        result = regime.detect_regime(m5_clean)
+        self.assertIn(result, (regime.TRENDING, regime.RANGING, regime.TRANSITIONAL))
 
     # ---- volatility spike ----
 
@@ -247,22 +271,174 @@ class TestSMCHelpers(unittest.TestCase):
         atr = atr_series.iloc[-1]
         self.assertFalse(s._volatility_spike(atr_series, atr))
 
-    # ---- volume ----
 
-    def test_volume_score_with_tick_volume(self):
-        s = SMCStrategy()
+class TestVolumeGraduated(unittest.TestCase):
+    """Tests for the graduated 0/1/2 volume scoring system."""
+
+    def setUp(self):
+        self.strategy = SMCStrategy()
+
+    def test_volume_score_0_no_volume_col(self):
         m5 = _make_m5(n=100)
-        m5["tick_volume"] = [100] * 99 + [200]
-        m5_clean = s._clean(m5)
-        score = s._volume_score(m5_clean)
+        m5_clean = self.strategy._clean(m5)
+        score = self.strategy._volume_score(m5_clean, None, False, is_buy=True)
+        self.assertEqual(score, 0)
+
+    def test_volume_score_1_entry_above_avg(self):
+        m5 = _make_m5(n=100)
+        m5["tick_volume"] = [100.0] * 99 + [200.0]
+        m5_clean = self.strategy._clean(m5)
+        score = self.strategy._volume_score(m5_clean, None, False, is_buy=True)
+        self.assertGreaterEqual(score, 1)
+
+    def test_volume_score_2_with_ob_and_delta(self):
+        m5 = _make_m5(n=100, trend=0.2)
+        vols = [100.0] * 100
+        vols[-1] = 200.0
+        for i in range(80, 100):
+            vols[i] = 150.0
+        m5["tick_volume"] = vols
+        m5_clean = self.strategy._clean(m5)
+        ob = {"high": 2010.0, "low": 2008.0, "vol_confirmed": True}
+        score = self.strategy._volume_score(m5_clean, ob, False, is_buy=True)
+        self.assertIn(score, (1, 2))
+
+    def test_volume_score_disabled(self):
+        m5 = _make_m5(n=100)
+        m5["tick_volume"] = [200.0] * 100
+        m5_clean = self.strategy._clean(m5)
+        with patch.object(config, "SMC_USE_VOLUME_CONFIRM", False):
+            score = self.strategy._volume_score(m5_clean, None, False, is_buy=True)
+        self.assertEqual(score, 0)
+
+    def test_volume_delta_bullish(self):
+        m5 = _make_m5(n=100, trend=0.5)
+        m5["tick_volume"] = [100.0] * 100
+        m5_clean = self.strategy._clean(m5)
+        result = self.strategy._volume_delta(m5_clean, is_buy=True)
+        self.assertIsInstance(result, bool)
+
+    def test_volume_delta_no_col(self):
+        m5 = _make_m5(n=100)
+        m5_clean = self.strategy._clean(m5)
+        result = self.strategy._volume_delta(m5_clean, is_buy=True)
+        self.assertFalse(result)
+
+    def test_vol_col_tick_volume(self):
+        m5 = _make_m5(n=10)
+        m5["tick_volume"] = [100] * 10
+        m5_clean = self.strategy._clean(m5)
+        self.assertEqual(self.strategy._vol_col(m5_clean), "tick_volume")
+
+    def test_vol_col_volume(self):
+        m5 = _make_m5(n=10)
+        m5["volume"] = [100] * 10
+        m5_clean = self.strategy._clean(m5)
+        self.assertEqual(self.strategy._vol_col(m5_clean), "volume")
+
+    def test_vol_col_none(self):
+        m5 = _make_m5(n=10)
+        m5_clean = self.strategy._clean(m5)
+        self.assertIsNone(self.strategy._vol_col(m5_clean))
+
+
+class TestDST(unittest.TestCase):
+    """Tests for DST date math helpers."""
+
+    def setUp(self):
+        self.strategy = SMCStrategy()
+
+    def test_last_sunday_march_2026(self):
+        result = self.strategy._last_sunday(2026, 3)
+        self.assertEqual(result, date(2026, 3, 29))
+        self.assertEqual(result.weekday(), 6)
+
+    def test_last_sunday_october_2026(self):
+        result = self.strategy._last_sunday(2026, 10)
+        self.assertEqual(result, date(2026, 10, 25))
+        self.assertEqual(result.weekday(), 6)
+
+    def test_nth_sunday_march_2026(self):
+        result = self.strategy._nth_sunday(2026, 3, 2)
+        self.assertEqual(result, date(2026, 3, 8))
+        self.assertEqual(result.weekday(), 6)
+
+    def test_nth_sunday_november_2026(self):
+        result = self.strategy._nth_sunday(2026, 11, 1)
+        self.assertEqual(result, date(2026, 11, 1))
+        self.assertEqual(result.weekday(), 6)
+
+    def test_dst_offsets_winter(self):
+        ts = pd.Timestamp("2026-01-15 10:00:00")
+        lon_off, ny_off = self.strategy._dst_offsets(ts)
+        self.assertEqual(lon_off, 0)
+        self.assertEqual(ny_off, 0)
+
+    def test_dst_offsets_summer(self):
+        ts = pd.Timestamp("2026-06-15 10:00:00")
+        with patch.object(config, "SMC_USE_DST_ADJUST", True):
+            lon_off, ny_off = self.strategy._dst_offsets(ts)
+        self.assertEqual(lon_off, 1)
+        self.assertEqual(ny_off, 1)
+
+    def test_dst_offsets_disabled(self):
+        ts = pd.Timestamp("2026-06-15 10:00:00")
+        with patch.object(config, "SMC_USE_DST_ADJUST", False):
+            lon_off, ny_off = self.strategy._dst_offsets(ts)
+        self.assertEqual(lon_off, 0)
+        self.assertEqual(ny_off, 0)
+
+    def test_dst_uk_only(self):
+        """UK DST starts last Sunday March, US starts 2nd Sunday March — gap period."""
+        ts = pd.Timestamp("2026-03-15 10:00:00")
+        with patch.object(config, "SMC_USE_DST_ADJUST", True):
+            lon_off, ny_off = self.strategy._dst_offsets(ts)
+        self.assertEqual(lon_off, 0)
+        self.assertEqual(ny_off, 1)
+
+
+class TestSessionQuality(unittest.TestCase):
+    """Tests for killzone / session overlap quality scoring."""
+
+    def setUp(self):
+        self.strategy = SMCStrategy()
+
+    def test_killzone_london(self):
+        ts = pd.Timestamp("2026-01-05 08:00:00")
+        with patch.object(config, "SMC_USE_SESSION_QUALITY", True):
+            score = self.strategy._session_quality(ts)
         self.assertEqual(score, 1)
 
-    def test_volume_score_no_volume_col(self):
-        s = SMCStrategy()
-        m5 = _make_m5(n=100)
-        m5_clean = s._clean(m5)
-        score = s._volume_score(m5_clean)
+    def test_killzone_ny(self):
+        ts = pd.Timestamp("2026-01-05 14:00:00")
+        with patch.object(config, "SMC_USE_SESSION_QUALITY", True):
+            score = self.strategy._session_quality(ts)
+        self.assertEqual(score, 1)
+
+    def test_no_killzone_midday(self):
+        ts = pd.Timestamp("2026-01-05 11:00:00")
+        with patch.object(config, "SMC_USE_SESSION_QUALITY", True):
+            score = self.strategy._session_quality(ts)
         self.assertEqual(score, 0)
+
+    def test_killzone_disabled(self):
+        ts = pd.Timestamp("2026-01-05 08:00:00")
+        with patch.object(config, "SMC_USE_SESSION_QUALITY", False):
+            score = self.strategy._session_quality(ts)
+        self.assertEqual(score, 0)
+
+    def test_overlap_zone(self):
+        ts = pd.Timestamp("2026-01-05 14:30:00")
+        with patch.object(config, "SMC_USE_SESSION_QUALITY", True):
+            score = self.strategy._session_quality(ts)
+        self.assertEqual(score, 1)
+
+
+class TestMaxScore(unittest.TestCase):
+
+    def test_max_score_is_17(self):
+        from exness_bot.smc_strategy import _MAX_SCORE
+        self.assertEqual(_MAX_SCORE, 17)
 
 
 if __name__ == "__main__":
