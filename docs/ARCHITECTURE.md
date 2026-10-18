@@ -1,72 +1,81 @@
-# Automated System Architecture
+# System Architecture
 
-The project is split into a live-data path and a broker-independent validation/testing path. Live automatic trading is disabled by default.
-
-```text
-MT5 closed candles
-        |
-        v
- data.py -> indicators.py -> strategy.py
-        |                         |
-        |                   BUY / SELL / HOLD / CLOSE
-        v                         v
-   session/spread          safety.py validation
-                                  |
-                       reject -> log NO-TRADE
-                                  |
-                         risk.py sizing + SL/TP
-                                  |
-                 simulation / DRY_RUN / demo executor
-                                  |
-                 position monitoring + trailing stop
-                                  |
-                    closure + trade log + recovery
-```
-
-## Target production topology: VP_BREAKOUT_M5_V1
+## SMC Strategy Data Flow (primary)
 
 ```text
-M1/tick + closed M5 data
-          |
-          v
-  profile snapshot (03:00 UTC)
-          |
-          v
- closed breakout -> persisted pending setup -> next-candle tick trigger
-          |
-          v
- fresh quote -> broker-aware 0.5% sizing -> constraints -> order_check
-          |
-          v
- order_send -> fill/reconciliation -> durable lifecycle + audit ledger
+MT5 closed M5 candle detected
+            |
+            v
+   data.load_multi_frame()
+   ├── M5  (500 bars)  ── primary entries
+   ├── M15 (200 bars)  ── structure bias
+   ├── H1  (300 bars)  ── EMA trend
+   └── VP snapshot     ── VAH/VAL/POC confluence
+            |
+            v
+   strategy_dispatch.decide() -> smc_strategy.decide()
+   ├── M15 bias (HH/HL or LH/LL)
+   ├── Liquidity sweep + BOS + Order Block + FVG
+   ├── Displacement + Price Action + Premium/Discount
+   ├── VP Confluence (near VAL/POC or VAH/POC)
+   ├── H1 EMA Trend (EMA50 vs EMA200)
+   └── Score >= 9/14 + 4 mandatory conditions
+            |
+            v
+   {action, entry, sl, tp1, tp2, confidence}
+            |
+            v
+   safety.validate_order() -> risk.smc_sl_tp() -> risk.position_size()
+            |
+            v
+   executor.open_position() -> MT5
+            |
+            v
+   _manage_open() every poll:
+   ├── Price hits TP1 -> executor.partial_close(50%) + modify_sl(breakeven)
+   └── After TP1 -> v2_candidate.trailing_stop() on remaining 50%
 ```
 
-Backtest, DEMO, LIVE_SHADOW, and LIVE must call the same profile, strategy, risk, and state-machine core. Only market-data and execution adapters differ. The target flow is not implemented by the legacy `strategy.py` path yet; the traceability matrix records the remaining work. The V2 amendment filters are pure candidate functions in `v2_candidate.py`; they are not enabled in the legacy runner until the shared XAUUSD engine and ablation reports exist.
+## Legacy SMA Data Flow
+
+```text
+MT5 closed M15 candle -> data.load_frame() -> indicators -> strategy.decide()
+   -> safety.validate_order() -> risk.sl_tp() -> executor.open_position()
+   -> trailing_sl() every poll
+```
+
+## VP Breakout Flow
+
+```text
+M5 candles -> volume_profile (03:00 UTC sessions) -> VAH=GREEN, VAL=RED
+   -> close > GREEN = BUY setup / close < RED = SELL setup
+   -> next-candle trigger -> fixed 30-pip SL, 40-pip TP
+```
 
 ## Components
 
-- `data.py` / `market_data.py`: fetch rates, remove the forming candle, and reject stale, malformed, non-finite, duplicated, or non-monotonic OHLC data before analysis.
-- `indicators.py`: calculates SMA, RSI, ATR, trend direction, session checks, and trailing-stop math.
-- `strategy.py`: preserves the existing SMA crossover + RSI + 200-SMA trend strategy and returns a validated action contract. Invalid indicator data becomes `hold`.
-- `safety.py`: performs fail-closed order validation, emergency-stop checks, stale-signal checks, margin/spread checks, and process-level trade/loss limits.
-- `risk.py`: calculates risk-based lot size, broker minimum stop distances, daily equity guard, and trailing stops.
-- `executor.py`: isolates MT5 order requests and retries. It refuses live mode unless the explicit live gate is enabled; simulation and dry-run never call `order_send`; ambiguous broker timeouts are not retried automatically.
-- `simulator.py`: deterministic local broker substitute. It supports open, stop/target monitoring, monotonic stop changes, manual close, persistence, and restart reconciliation.
-- `runner.py` / `recovery.py`: orchestrate startup, bounded exponential connection recovery, position management, signal handling, validation, execution, and shutdown.
-- `backtest.py`: evaluates the rule strategy on historical candles with spread and commission assumptions.
+| Module | Purpose |
+|---|---|
+| `smc_strategy.py` | SMC engine: swings, BOS, OB, FVG, VP, H1 trend, scoring |
+| `strategy_dispatch.py` | Routes to active strategy via `config.ACTIVE_STRATEGY` |
+| `data.py` | Single-frame and multi-frame (M5+M15+H1+VP) data loading |
+| `runner.py` | Main loop: candle detection, strategy dispatch, partial close/BE/trail |
+| `executor.py` | MT5 orders: open, close, partial_close, modify_sl with retry |
+| `safety.py` | Fail-closed validation, emergency stop, signal deduplication |
+| `risk.py` | Position sizing, SL/TP (ATR-based and SMC passthrough), daily guard |
+| `indicators.py` | SMA, RSI, ATR, H1 EMA trend, trailing SL, session filter |
+| `volume_profile.py` | Session profile: VAH, VAL, POC from volume bins |
+| `simulator.py` | Local broker sim with partial close and BE support |
+| `recovery.py` | Bounded exponential reconnect backoff |
 
-## State and recovery
+## Execution Modes
 
-The local simulator stores state through an atomic temporary-file replacement. A new simulator instance reloads open/closed positions and ticket numbering. `reconcile()` marks a locally open position as externally missing instead of opening a replacement, which is the safe recovery behavior.
+| Mode | Orders sent | Default |
+|---|---|---|
+| `simulation` | No (logged only) | Yes |
+| `demo` | Demo account only (if `DRY_RUN=False`) | No |
+| `live` | Requires 5 explicit gates | No |
 
-The MT5 runner obtains broker positions on each loop and uses the broker as the source of truth. When a previously observed position disappears, it reads realized broker history; if history is unavailable, it records a conservative loss so consecutive-loss protection cannot be bypassed. Startup resets open exposure from the current broker snapshot before accepting new entries.
+## State and Recovery
 
-## Execution modes
-
-| Mode | External order submission | Default |
-|---|---:|---:|
-| `simulation` | No | Yes |
-| `demo` | Only if `DRY_RUN=False` and the account is demo | No |
-| `live` | Requires live account, live mode, confirmation, and `LIVE_TRADING_ENABLED=True` | No |
-
-`DRY_RUN=True` remains an additional no-order guard in every mode. Connection loss triggers bounded exponential reconnect attempts; exhausting them stops the process safely instead of creating new trades without a verified connection.
+The runner uses the broker as source of truth. Disappeared positions are reconciled with conservative loss assumption. The simulator persists state atomically via temp-file replacement. SMC position metadata (`_smc_meta`) tracks TP1/TP2/BE state per ticket and cleans up when positions close.

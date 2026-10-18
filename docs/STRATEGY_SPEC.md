@@ -1,6 +1,8 @@
-# VP_BREAKOUT_M5_V1 — Production Strategy Specification
+# VP_BREAKOUT_M5_V1 — Reference Strategy Specification
 
-Status: **engineering and research specification**. This document is the source of truth for the XAUUSD production candidate described in the supplied final PDF. It does not claim profitability, and it does not claim that the current legacy implementation has completed these requirements.
+> **Note**: This strategy has been superseded by the SMC (Smart Money Concepts) strategy as the primary XAUUSD engine. VP Breakout remains available as an alternative via `ACTIVE_STRATEGY = "vp_breakout"`. The SMC strategy integrates VP levels as one of its confluence factors. See `docs/GUIDE.md` for the current primary strategy documentation.
+
+Status: **reference specification**. This document describes the VP Breakout strategy which is still available in the codebase but is no longer the primary trading engine.
 
 ## 1. Scope and non-negotiable rules
 

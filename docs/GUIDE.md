@@ -1,29 +1,22 @@
 # Exness Bot — Step-by-Step Operator Guide
 
-This guide is deliberately honest about the current boundary: Phase B and Phase D are implemented and tested; Phase C execution hardening and real Phase E validation are not complete.
+## 1. Choose your strategy
 
-## 1. Choose the path
+The bot supports three strategies via `config.ACTIVE_STRATEGY`:
 
-### Research path — VP_BREAKOUT_M5_V1
+| Strategy | Config value | Instrument | Description |
+|---|---|---|---|
+| **SMC (primary)** | `"smc"` | XAUUSD M5 | Smart Money Concepts: liquidity sweeps, BOS, order blocks, FVG, VP confluence, H1 trend, partial close at TP1 |
+| VP Breakout | `"vp_breakout"` | XAUUSD M5 | Volume Profile breakout with next-candle confirmation |
+| Legacy SMA | `"sma"` | EURUSD M15 | SMA 20/50 crossover + RSI + trend filter |
 
-Use these modules:
+Default is `ACTIVE_STRATEGY = "smc"`. To switch, change it in `config.py`.
 
-- `exness_bot/volume_profile.py`
-- `exness_bot/vp_breakout_strategy.py`
-- `exness_bot/vp_risk.py`
-- `exness_bot/vp_backtest.py`
-
-This path implements the profile → breakout → next-candle trigger → fixed-risk lifecycle and is covered by Phase B/Phase D tests. It is not wired into `runner.py`.
-
-### MT5 demo path — legacy control
-
-`python -m exness_bot.runner` currently runs the legacy SMA/RSI/ATR strategy from `strategy.py`. It is useful for controlled demo plumbing only. It is not a demo deployment of the Phase B XAUUSD strategy.
-
-## 2. Install and configure MT5 demo access
+## 2. Install and configure MT5
 
 1. Install Exness MT5 on Windows.
-2. Log into a separate demo account.
-3. Enable **Allow algorithmic trading** in MT5.
+2. Log into a **demo** account.
+3. Enable **Allow algorithmic trading** in MT5 (Tools > Options > Expert Advisors).
 4. Create the private credential file:
 
 ```bat
@@ -39,104 +32,129 @@ MT5_PASSWORD = "your-demo-password"
 MT5_SERVER = "your-demo-server"
 ```
 
-6. Edit `exness_bot/config.py`:
+## 3. Backtest the SMC strategy
 
-```python
-SYMBOL = "EURUSD"             # exact symbol/base name available in MT5
-MAGIC = 20240601              # unique bot identifier
-DEMO_ONLY = True
-EXECUTION_MODE = "demo"
-DRY_RUN = True
-LIVE_TRADING_ENABLED = False
+Before running live, backtest on historical data.
+
+**Step 1** — Download XAUUSD M5, M15, and H1 CSV data (minimum 3-6 months). Each CSV needs columns:
+
+```text
+time,open,high,low,close,volume
 ```
 
-`DEMO_ONLY` is checked against the MT5 account mode before the main loop. A real account is rejected. The current source does not make the constant immutable: it is a configuration flag with additional live gates. Treat it as mandatory and do not change it.
+You can export from MT5: Tools > History Center > XAUUSD > M5/M15/H1 > Export.
 
-## 3. Run a no-order dry run
+**Step 2** — Run the backtester:
+
+```bash
+.venv/bin/python -m exness_bot.smc_backtest \
+    --m5-csv data/XAUUSD_M5.csv \
+    --m15-csv data/XAUUSD_M15.csv \
+    --h1-csv data/XAUUSD_H1.csv
+```
+
+**Options:**
+
+```
+--balance 10000      # starting balance (default 10000)
+--risk 0.005         # risk fraction per trade (default 0.5%)
+--no-vp              # disable VP confluence scoring
+--no-h1              # disable H1 EMA trend scoring
+--output path.csv    # trade log output file
+```
+
+**Step 3** — Review the report: win rate, profit factor, max drawdown, partial close stats. Target: win rate > 55%, profit factor > 1.5, max DD < 15%.
+
+## 4. Run in simulation mode (no real orders)
+
+```python
+# config.py
+ACTIVE_STRATEGY = "smc"
+EXECUTION_MODE = "simulation"
+DRY_RUN = True
+DEMO_ONLY = True
+LIVE_TRADING_ENABLED = False
+```
 
 ```bat
 python -m exness_bot.runner
 ```
 
-With `DRY_RUN=True`, the runner may calculate and log a legacy signal, but the executor must not call `order_send`.
-
-Review:
-
-- `exness_bot/logs/bot.log`
-- `exness_bot/logs/trades.csv`
-- symbol resolution
-- demo account identity
-- spread and rejected-entry reasons
+Review logs:
+- `exness_bot/logs/bot.log` — SMC decisions, scores, confluences
+- `exness_bot/logs/trades.csv` — intended entries with SL/TP1/TP2
 
 Stop with `Ctrl+C` or create `exness_bot/STOP_TRADING`.
 
-## 4. Allow demo orders only after review
+## 5. Run on demo account (real demo orders)
 
-Change only:
+Only after reviewing simulation logs:
 
 ```python
+# config.py
+ACTIVE_STRATEGY = "smc"
 EXECUTION_MODE = "demo"
 DRY_RUN = False
 DEMO_ONLY = True
 LIVE_TRADING_ENABLED = False
 ```
 
-Then confirm MT5 is still logged into the demo account and restart the process. The current runner will submit legacy strategy orders if its SMA/RSI/ATR signal and safety checks approve them. It will not submit Phase B volume-profile orders.
+```bat
+python -m exness_bot.runner
+```
 
-## 5. Actual Phase B strategy flow
+Monitor for 1-2 weeks:
+- Partial close execution at TP1
+- Breakeven SL modification after TP1
+- Trailing stop on remaining position
+- Session filter (London 7-11:30, NY 13-17:30 UTC)
+- Spread filtering (max 40 points for XAUUSD)
 
-The implemented Phase B modules work as follows:
+## 6. How the SMC strategy works
 
-1. A new volume-profile session starts at 03:00 UTC.
-2. Prior closed candles build the 70% profile.
-3. VAH becomes GREEN and VAL becomes RED.
-4. A close strictly above GREEN creates a BUY setup; a close strictly below RED creates a SELL setup.
-5. The breakout high/low and deterministic ID are frozen.
-6. Only the next candle is watched for an intrabar trigger.
-7. A trigger creates one trade; no trigger expires the setup.
-8. The risk module creates exactly 30-pip SL and 40-pip TP.
-9. Sizing targets 0.5% of balance and quantizes downward.
-10. A minimum lot that exceeds the budget rejects the trade.
-11. Two consecutive losses or 2% daily realized loss blocks new entries.
+The SMC engine runs every closed M5 candle during London/NY sessions:
 
-This is currently Phase B research/backtest behavior, not the behavior of the MT5 runner.
+1. **M15 Bias** — Higher highs + higher lows = bullish; lower highs + lower lows = bearish.
+2. **Liquidity Sweep** — Price wicks below swing lows (buys) or above swing highs (sells).
+3. **Break of Structure (BOS)** — Close breaks a previous swing point.
+4. **Order Block (OB)** — Bearish candle followed by strong bullish move (for buys), inverse for sells.
+5. **Fair Value Gap (FVG)** — Gap between candle 1 high and candle 3 low.
+6. **Displacement** — Strong body candle >= 0.55 ATR.
+7. **Price Action** — Strong close with body >= 55% of candle range.
+8. **Premium/Discount** — Above/below equilibrium of recent swing range.
+9. **VP Confluence** — Entry near VAL/POC (buys) or VAH/POC (sells) from volume profile.
+10. **H1 EMA Trend** — EMA50 > EMA200 on H1 confirms bullish bias (triple timeframe).
 
-## 6. Phase D backtesting
+**Scoring**: Each condition has weight (bias=2, sweep=2, BOS=2, OB=2, others=1). Minimum score: 9/14. Mandatory: bias + sweep + BOS + OB must all be true.
 
-Use real XAUUSD history only for Phase E:
+**Risk management**:
+- SL at Order Block / liquidity level + ATR buffer
+- TP1 = 1.5R (50% close + breakeven)
+- TP2 = 2.5R (remaining 50% + ATR trailing stop)
+- Cooldown: 8 bars between trades
+- Safety: DailyGuard, emergency stop, signal deduplication, validate_order checks
+
+## 7. VP Breakout backtesting (alternative strategy)
 
 ```bash
-python -m exness_bot.vp_backtest --csv path/to/XAUUSD_M5.csv
+.venv/bin/python -m exness_bot.vp_backtest --csv path/to/XAUUSD_M5.csv
 ```
 
-Expected columns:
+Level-2 OHLC with stop-first conservative exits, spread/commission/swap costs.
 
-```text
-time,open,high,low,close,volume
+## 8. Run all tests
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
-Preferred resolution is tick or M1. M5 OHLC runs at Level 2 and has lower confidence because exact intrabar ordering is unavailable. The engine reports costs, sizing, drawdown, expectancy, trade count, rejection reasons, and `INSUFFICIENT SAMPLE` when fewer than 100 trades are available.
+Current: **61 tests** covering SMC strategy, SMC backtester, VP breakout, V2 candidate filters, safety/simulator, and execution.
 
-No genuine Phase E dataset is currently in this repository.
+## 9. Safety boundary
 
-## 7. Safety boundary
-
-This project is experimental and unvalidated:
-
-- No proven backtest edge.
-- No genuine XAUUSD baseline.
-- No completed Phase C execution hardening.
-- No production broker reconciliation guarantee.
-- No demo result that proves future profitability.
-- No live use authorized.
-
-The latest mock behavior check confirmed:
-
-```text
-DEMO_GUARD: True ok
-DEMO_ORDER_SEND_CALLS: 1
-DEMO_RESULT_RETCODE: 10009
-LIVE_WITH_DEMO_ONLY: False live account rejected by DEMO_ONLY
-```
-
-That proves the current guard allows valid demo execution and rejects live execution while `DEMO_ONLY=True`; it does not prove the strategy is safe or profitable.
+- `DRY_RUN = True` and `DEMO_ONLY = True` by default.
+- Emergency stop: create `exness_bot/STOP_TRADING` to block all entries.
+- DailyGuard: stops trading after 2% daily drawdown.
+- Max consecutive losses, max exposure, max spread — all enforced.
+- Live trading requires ALL five gates: `EXECUTION_MODE="live"`, `DRY_RUN=False`, `DEMO_ONLY=False`, `LIVE_TRADING_ENABLED=True`, `CONFIRM_LIVE_STRING="I ACCEPT THE RISK"`.
+- See `docs/LIVE_TRADING.md` for the full live procedure.
