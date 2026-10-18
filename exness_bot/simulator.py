@@ -117,6 +117,39 @@ class Simulator:
         self._save()
         return closed
 
+    def partial_close(self, ticket, price, fraction):
+        """Close a fraction of volume; return the closed portion as a SimPosition."""
+        position = self.positions[ticket]
+        if position.status != "open":
+            return position
+        close_vol = round(position.volume * fraction, 2)
+        if close_vol <= 0:
+            return None
+        remaining = round(position.volume - close_vol, 2)
+        if remaining <= 0:
+            return self.close(ticket, price, "partial_close_full")
+        direction = 1 if position.side == "buy" else -1
+        partial_pnl = (float(price) - position.entry) * direction * close_vol
+        closed_part = SimPosition(
+            ticket=ticket, side=position.side, volume=close_vol,
+            entry=position.entry, sl=position.sl, tp=position.tp,
+            opened_at=position.opened_at, status="closed",
+            exit=float(price), exit_reason="partial_close", pnl=partial_pnl,
+        )
+        position.volume = remaining
+        self.last_price = float(price)
+        self._save()
+        return closed_part
+
+    def modify_sl_breakeven(self, ticket, entry_price):
+        """Move SL to entry (breakeven) regardless of direction."""
+        position = self.positions[ticket]
+        if position.status != "open":
+            return False
+        position.sl = float(entry_price)
+        self._save()
+        return True
+
     def reconcile(self, external_positions):
         external_ids = {int(p.ticket) for p in external_positions}
         for ticket, position in self.positions.items():

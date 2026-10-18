@@ -68,6 +68,23 @@ def trailing_sl(side, entry, current_sl, atr, price):
     return new_sl
 
 
+def h1_ema_trend(h1_df, fast=50, slow=200):
+    """Return 1 (bullish), -1 (bearish), or 0 (neutral) from H1 EMA crossover."""
+    from exness_bot.v2_candidate import ema as _ema, _finite
+    if h1_df is None or len(h1_df) < slow + 1:
+        return 0
+    closes = h1_df["close"].tolist()
+    f = _ema(closes, fast)
+    s = _ema(closes, slow)
+    if not _finite(f[-1]) or not _finite(s[-1]) or not _finite(closes[-1]):
+        return 0
+    if closes[-1] > s[-1] and f[-1] > s[-1]:
+        return 1
+    if closes[-1] < s[-1] and f[-1] < s[-1]:
+        return -1
+    return 0
+
+
 def session_ok(ts):
     """True if timestamp `ts` (UTC) is inside config's trading day/hour window."""
     if config.TRADE_DAYS and ts.weekday() not in config.TRADE_DAYS:

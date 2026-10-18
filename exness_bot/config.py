@@ -85,3 +85,31 @@ RSI_PERIOD = 14
 BT_SPREAD_POINTS = 12     # assumed round-trip spread cost per trade, in points
 BT_COMMISSION_PER_LOT = 7.0   # USD per lot round-trip (Exness Raw/Zero style); 0 for Standard
 BT_START_BALANCE = 1000.0
+
+# ---------------- Strategy Selector ----------------
+ACTIVE_STRATEGY = "smc"   # "sma" | "smc" | "vp_breakout"
+
+# ---------------- SMC XAUUSD M5 ----------------
+SMC_SYMBOL = "XAUUSD"
+SMC_PRIMARY_TF = _M5
+SMC_STRUCTURE_TF = _M15
+SMC_TREND_TF = _H1
+SMC_LOOKBACK_M5 = 500
+SMC_LOOKBACK_M15 = 200
+SMC_LOOKBACK_H1 = 300
+SMC_MIN_SCORE = 9
+SMC_COOLDOWN_BARS = 8
+SMC_TP1_R = 1.5
+SMC_TP2_R = 2.5
+SMC_PARTIAL_CLOSE_PCT = 0.5
+SMC_SL_ATR_BUFFER = 0.15
+SMC_DISPLACEMENT_ATR = 0.55
+SMC_BODY_FRAC = 0.55
+SMC_SWING_LOOKBACK = 3
+SMC_ATR_PERIOD = 14
+SMC_USE_VP_CONFLUENCE = True
+SMC_VP_BIN_SIZE = 1.0
+SMC_USE_H1_TREND = True
+SMC_SPREAD_FILTER_POINTS = 40
+SMC_SESSION_LONDON = (7, 11.5)
+SMC_SESSION_NY = (13, 17.5)

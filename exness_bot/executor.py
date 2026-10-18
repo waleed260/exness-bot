@@ -140,6 +140,40 @@ def close_position(pos, symbol_info):
     return _send_with_retry(build, f"CLOSE ticket {pos.ticket}", symbol_info)
 
 
+def partial_close(pos, close_fraction, symbol_info):
+    """Close a fraction of an open position's volume."""
+    step = symbol_info.volume_step or 0.01
+    close_vol = round(round(pos.volume * close_fraction / step) * step, 2)
+    if close_vol < (symbol_info.volume_min or 0.01):
+        log.logger.warning(f"Partial close volume {close_vol} below min; skipping")
+        return None
+
+    symbol = mt5_client.resolved_symbol()
+    if pos.type == mt5.POSITION_TYPE_BUY:
+        order_type = mt5.ORDER_TYPE_SELL
+    else:
+        order_type = mt5.ORDER_TYPE_BUY
+
+    def build(filling):
+        t = mt5_client.tick(symbol)
+        price = t.bid if order_type == mt5.ORDER_TYPE_SELL else t.ask
+        return {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": close_vol,
+            "type": order_type,
+            "position": pos.ticket,
+            "price": price,
+            "deviation": config.DEVIATION_POINTS,
+            "magic": config.MAGIC,
+            "comment": "exness_bot partial_close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling,
+        }
+
+    return _send_with_retry(build, f"PARTIAL-CLOSE {close_vol} ticket {pos.ticket}", symbol_info)
+
+
 def modify_sl(pos, new_sl, symbol_info):
     def build(_filling=None):
         return {

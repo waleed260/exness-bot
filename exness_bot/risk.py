@@ -57,6 +57,18 @@ def sl_tp(side, entry_price, atr, symbol_info):
     return entry_price + sl_dist, entry_price - tp_dist
 
 
+def smc_sl_tp(side, entry_price, sl_price, tp_price, symbol_info):
+    """Enforce broker minimum stop distance on SMC-provided SL/TP."""
+    min_dist = (symbol_info.trade_stops_level or 0) * symbol_info.point
+    sl_dist = abs(entry_price - sl_price)
+    tp_dist = abs(entry_price - tp_price)
+    if sl_dist < min_dist:
+        sl_price = entry_price - min_dist if side == "buy" else entry_price + min_dist
+    if tp_dist < min_dist:
+        tp_price = entry_price + min_dist if side == "buy" else entry_price - min_dist
+    return sl_price, tp_price
+
+
 def new_trailing_sl(pos, atr, symbol_info, price):
     """Improved SL price for an open MT5 position, or None to leave it."""
     import MetaTrader5 as mt5
