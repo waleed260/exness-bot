@@ -12,10 +12,10 @@ except Exception:  # MetaTrader5 only installs on Windows; allow import elsewher
 
 
 # ---------------- Safety ----------------
-DRY_RUN = True            # True = never send a real order, only log the intent
+DRY_RUN = False           # True = never send a real order, only log the intent
 DEMO_ONLY = True          # refuse to run if the connected account is a real/live account
 CONFIRM_LIVE_STRING = ""  # to trade live, set DEMO_ONLY=False AND set this to "I ACCEPT THE RISK"
-EXECUTION_MODE = "simulation"  # simulation | demo | live; simulation is the safe default
+EXECUTION_MODE = "demo"   # simulation | demo | live; simulation logs only, demo trades on demo account
 LIVE_TRADING_ENABLED = False    # remains False until a separately reviewed release
 EMERGENCY_STOP_FILE = "exness_bot/STOP_TRADING"
 SAFETY_STATE_FILE = "exness_bot/logs/safety_state.json"
@@ -97,7 +97,7 @@ SMC_TREND_TF = _H1
 SMC_LOOKBACK_M5 = 500
 SMC_LOOKBACK_M15 = 200
 SMC_LOOKBACK_H1 = 300
-SMC_MIN_SCORE = 9
+SMC_MIN_SCORE = 8
 SMC_COOLDOWN_BARS = 8
 SMC_TP1_R = 1.5
 SMC_TP2_R = 2.5
@@ -106,6 +106,7 @@ SMC_SL_ATR_BUFFER = 0.15
 SMC_DISPLACEMENT_ATR = 0.55
 SMC_BODY_FRAC = 0.55
 SMC_SWING_LOOKBACK = 3
+SMC_SIGNAL_LOOKBACK = 5    # candles back to detect sweep / BOS (they rarely align on one bar)
 SMC_ATR_PERIOD = 14
 SMC_USE_VP_CONFLUENCE = True
 SMC_VP_BIN_SIZE = 1.0
@@ -116,7 +117,9 @@ SMC_SESSION_NY = (13, 17.5)
 SMC_SESSION_ASIAN = (23, 5)       # Tokyo session (wraps midnight)
 SMC_USE_ASIAN_SESSION = False     # enable to trade Asian session setups
 SMC_USE_VOLUME_CONFIRM = True     # above-average volume adds +1 score
-SMC_USE_REGIME_FILTER = True      # hold in ranging markets (ADX-based)
+SMC_USE_REGIME_FILTER = True      # penalize score in ranging markets (ADX-based)
+SMC_REGIME_PENALTY = 3            # score deducted when market is ranging
+SMC_VOLATILITY_PENALTY = 2        # score deducted on abnormal volatility spike
 SMC_ADX_PERIOD = 14
 SMC_ADX_RANGE_THRESHOLD = 20     # ADX below this = ranging market, hold
 SMC_USE_NEWS_FILTER = True        # hold on abnormal volatility spikes (news proxy)
@@ -135,8 +138,8 @@ SMC_USE_DST_ADJUST = True
 SMC_USE_SESSION_QUALITY = True
 
 # ---- News calendar ----
-SMC_NEWS_BLACKOUT_BEFORE_MIN = 30
-SMC_NEWS_BLACKOUT_AFTER_MIN = 15
+SMC_NEWS_BLACKOUT_BEFORE_MIN = 15
+SMC_NEWS_BLACKOUT_AFTER_MIN = 10
 SMC_NEWS_USE_MT5_CALENDAR = True
 SMC_NEWS_USE_STATIC_SCHEDULE = True
 SMC_NEWS_HIGH_IMPACT_ONLY = True

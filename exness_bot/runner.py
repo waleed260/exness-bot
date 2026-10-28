@@ -237,9 +237,6 @@ def _handle_candle_smc(symbol_info, guard, safety_state, signal_ledger):
 
     if side is not None:
         return
-    if conf < config.MIN_CONFIDENCE:
-        log.logger.info(f"Skip {action}: confidence {conf:.2f} < {config.MIN_CONFIDENCE}")
-        return
     if len(mt5_client.positions()) >= config.MAX_OPEN_POSITIONS:
         return
 

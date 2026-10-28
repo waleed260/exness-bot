@@ -51,12 +51,16 @@ class SMCStrategy:
         atr_series = self._atr(m5)
         atr = atr_series.iloc[-1]
 
-        reg = regime_mod.detect_regime(m5)
-        if config.SMC_USE_REGIME_FILTER and reg == regime_mod.RANGING:
-            return self._hold("ranging market — SMC signals unreliable")
+        # Regime and volatility: score penalties, not hard blocks
+        regime_penalty = 0
+        if config.SMC_USE_REGIME_FILTER:
+            reg = regime_mod.detect_regime(m5)
+            if reg == regime_mod.RANGING:
+                regime_penalty = config.SMC_REGIME_PENALTY
 
+        vol_penalty = 0
         if config.SMC_USE_NEWS_FILTER and self._volatility_spike(atr_series, atr):
-            return self._hold("abnormal volatility — possible news event")
+            vol_penalty = config.SMC_VOLATILITY_PENALTY
 
         bias = self._m15_bias(m15)
         if bias == 0:
@@ -95,15 +99,18 @@ class SMCStrategy:
 
         sq = self._session_quality(last_time)
 
+        penalty = regime_penalty + vol_penalty
         bscore = (
             2 * (bias > 0) + 2 * bs + 2 * bb + 2 * (bo is not None)
             + bdisp + bf + disc + bpa
             + (h1_bias > 0) + vp_buy + vol_buy + sq
+            - penalty
         )
         sscore = (
             2 * (bias < 0) + 2 * ss + 2 * sb + 2 * (so is not None)
             + sdisp + sf + prem + spa
             + (h1_bias < 0) + vp_sell + vol_sell + sq
+            - penalty
         )
 
         bc = bias > 0 and bs and bb and bo is not None and bscore >= config.SMC_MIN_SCORE
@@ -151,6 +158,8 @@ class SMCStrategy:
                 "VP confluence" if vp_buy else "",
                 f"volume {vol}/2" if vol else "",
                 "killzone" if sq else "",
+                f"ranging(-{regime_penalty})" if regime_penalty else "",
+                f"vol-spike(-{vol_penalty})" if vol_penalty else "",
             ]
         else:
             parts = [
@@ -166,6 +175,8 @@ class SMCStrategy:
                 "VP confluence" if vp_sell else "",
                 f"volume {vol}/2" if vol else "",
                 "killzone" if sq else "",
+                f"ranging(-{regime_penalty})" if regime_penalty else "",
+                f"vol-spike(-{vol_penalty})" if vol_penalty else "",
             ]
 
         reason = " | ".join(p for p in parts if p)
@@ -228,24 +239,38 @@ class SMCStrategy:
         return 0
 
     def _bull_sweep(self, d, lvl):
-        return lvl is not None and d.low.iloc[-1] < lvl and d.close.iloc[-1] > lvl
+        if lvl is None:
+            return False
+        for i in range(-config.SMC_SIGNAL_LOOKBACK, 0):
+            if d.low.iloc[i] < lvl and d.close.iloc[i] > lvl:
+                return True
+        return False
 
     def _bear_sweep(self, d, lvl):
-        return lvl is not None and d.high.iloc[-1] > lvl and d.close.iloc[-1] < lvl
+        if lvl is None:
+            return False
+        for i in range(-config.SMC_SIGNAL_LOOKBACK, 0):
+            if d.high.iloc[i] > lvl and d.close.iloc[i] < lvl:
+                return True
+        return False
 
     def _bull_bos(self, d, s):
-        return (
-            len(s["h"]) >= 2
-            and d.close.iloc[-1] > s["h"][-2][1]
-            and d.close.iloc[-2] <= s["h"][-2][1]
-        )
+        if len(s["h"]) < 2:
+            return False
+        lvl = s["h"][-2][1]
+        for i in range(-config.SMC_SIGNAL_LOOKBACK, 0):
+            if d.close.iloc[i] > lvl and d.close.iloc[i - 1] <= lvl:
+                return True
+        return False
 
     def _bear_bos(self, d, s):
-        return (
-            len(s["l"]) >= 2
-            and d.close.iloc[-1] < s["l"][-2][1]
-            and d.close.iloc[-2] >= s["l"][-2][1]
-        )
+        if len(s["l"]) < 2:
+            return False
+        lvl = s["l"][-2][1]
+        for i in range(-config.SMC_SIGNAL_LOOKBACK, 0):
+            if d.close.iloc[i] < lvl and d.close.iloc[i - 1] >= lvl:
+                return True
+        return False
 
     def _order_block(self, d, atr, bull):
         start = max(0, len(d) - 12)
